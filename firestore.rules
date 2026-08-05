@@ -1,0 +1,66 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsApartment(apartmentId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/apartments/$(apartmentId)).data.ownerId
+          == request.auth.uid;
+    }
+
+    function whitelistedLandlord() {
+      return signedIn()
+        && request.auth.token.email != null
+        && get(/databases/$(database)/documents/landlord_whitelist/$(request.auth.token.email)).data.active
+          == true;
+    }
+
+    match /landlord_whitelist/{email} {
+      allow get: if signedIn() && request.auth.token.email == email;
+      allow list, create, update, delete: if false;
+    }
+
+    match /users/{userId} {
+      allow create, read, update: if signedIn() && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    match /apartments/{apartmentId} {
+      allow read: if signedIn();
+      allow create: if whitelistedLandlord()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if ownsApartment(apartmentId);
+
+      match /members/{memberId} {
+        allow read: if signedIn()
+          && (request.auth.uid == memberId || ownsApartment(apartmentId));
+        allow create: if signedIn() && request.auth.uid == memberId;
+        allow update, delete: if ownsApartment(apartmentId);
+      }
+
+      match /requests/{requestId} {
+        allow create: if signedIn()
+          && request.resource.data.userId == request.auth.uid;
+        allow read, update, delete: if ownsApartment(apartmentId);
+      }
+
+      match /listings/{listingId} {
+        allow read: if signedIn()
+          && (ownsApartment(apartmentId)
+            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.apartmentId
+              == apartmentId);
+        allow create: if signedIn()
+          && request.resource.data.sellerId == request.auth.uid
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.apartmentId
+            == apartmentId;
+        allow update, delete: if signedIn()
+          && (resource.data.sellerId == request.auth.uid
+            || ownsApartment(apartmentId));
+      }
+    }
+  }
+}

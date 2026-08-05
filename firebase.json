@@ -1,0 +1,36 @@
+{
+  "firestore": {
+    "database": "(default)",
+    "location": "nam5",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "doorstep-market-736d0",
+          "appId": "1:589396162904:android:45e0c61803bfec2ae44d2d",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "doorstep-market-736d0",
+          "appId": "1:589396162904:ios:1230de475d92f62be44d2d",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "doorstep-market-736d0",
+          "configurations": {
+            "android": "1:589396162904:android:45e0c61803bfec2ae44d2d",
+            "ios": "1:589396162904:ios:1230de475d92f62be44d2d"
+          }
+        }
+      }
+    }
+  }
+}

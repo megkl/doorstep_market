@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>589396162904-gqbq1ipqo2l9pri0khofvvq1o4487ffm.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.589396162904-gqbq1ipqo2l9pri0khofvvq1o4487ffm</string>
+	<key>API_KEY</key>
+	<string>AIzaSyAX2x57N9-JLSGqQQP2tO7jjkjHj4TfHno</string>
+	<key>GCM_SENDER_ID</key>
+	<string>589396162904</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.megnifylabs.doorstepMarket</string>
+	<key>PROJECT_ID</key>
+	<string>doorstep-market-736d0</string>
+	<key>STORAGE_BUCKET</key>
+	<string>doorstep-market-736d0.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:589396162904:ios:1230de475d92f62be44d2d</string>
+</dict>
+</plist>

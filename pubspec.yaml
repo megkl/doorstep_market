@@ -28,8 +28,16 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  cloud_firestore: ^6.8.0
+  firebase_auth: ^6.5.6
+  firebase_core: ^4.13.0
   flutter:
-    sdk: flutter  flutter_riverpod: ^2.4.0
+    sdk: flutter
+  flutter_riverpod: ^2.4.0
+  google_fonts: ^6.3.2
+  google_sign_in: ^7.2.0
+  http: ^1.6.0
+  share_plus: ^13.3.0
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
@@ -44,6 +52,18 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/doorstep-app-icon.png"
+  adaptive_icon_background: "#2E9B57"
+  adaptive_icon_foreground: "assets/images/doorstep-logo.png"
+  adaptive_icon_monochrome: "assets/images/doorstep-logo.png"
+  adaptive_icon_foreground_inset: 20
+  remove_alpha_ios: true
+  background_color_ios: "#2E9B57"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -55,6 +75,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/images/doorstep-logo.png
+    - assets/images/onboarding/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

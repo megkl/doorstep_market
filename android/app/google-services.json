@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "589396162904",
+    "project_id": "doorstep-market-736d0",
+    "storage_bucket": "doorstep-market-736d0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:589396162904:android:45e0c61803bfec2ae44d2d",
+        "android_client_info": {
+          "package_name": "com.megnifylabs.doorstep_market"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "589396162904-427csadrv49feu281q9p27rcf5vtu9cp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBVtWRCL0Y9CJOYABZdiPVvamnaMrVeR2w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "589396162904-427csadrv49feu281q9p27rcf5vtu9cp.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
