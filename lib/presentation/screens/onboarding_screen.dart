@@ -24,7 +24,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _OnboardingData(
       title: 'Safe & Secure\nTransactions',
       description:
-          'We verify residents and hold\npayments securely until you\nconfirm.',
+          'We verify residents so you can\nreserve items and arrange pickup\nwith trusted neighbours.',
       illustration: _SecurityIllustration(),
     ),
     _OnboardingData(

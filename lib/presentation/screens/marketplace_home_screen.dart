@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/community_models.dart';
 import '../../state/auth_providers.dart';
+import '../widgets/ad_banner.dart';
+import 'marketplace_action_screens.dart';
+import 'marketplace_tabs.dart';
 import 'splash_screen.dart';
 
 class MarketplaceHomeScreen extends ConsumerStatefulWidget {
@@ -18,62 +21,96 @@ class MarketplaceHomeScreen extends ConsumerStatefulWidget {
 class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
   int _tab = 0;
 
+  void _openBuy() {
+    final apartment = widget.apartment;
+    if (apartment == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => BuyScreen(apartment: apartment)),
+    );
+  }
+
+  void _openListing(bool rental) {
+    final apartment = widget.apartment;
+    if (apartment == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ListingFormScreen(apartment: apartment, isRental: rental),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
-        bottom: false,
-        child: CustomScrollView(
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-              sliver: SliverList.list(
-                children: [
-                  _HomeHeader(
-                    apartmentName: widget.apartment?.name ?? 'Your Apartment',
-                  ),
-                  const SizedBox(height: 19),
-                  const _SearchBar(),
-                  const SizedBox(height: 18),
-                  const _PromoBanner(),
-                  const SizedBox(height: 18),
-                  const _QuickActions(),
-                  const SizedBox(height: 25),
-                  _ApartmentListings(apartment: widget.apartment),
-                ],
+      body: switch (_tab) {
+        1 => CategoriesScreen(apartment: widget.apartment),
+        3 => ChatsScreen(apartment: widget.apartment),
+        4 => ProfileScreen(apartment: widget.apartment),
+        _ => SafeArea(
+          bottom: false,
+          child: CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                sliver: SliverList.list(
+                  children: [
+                    _HomeHeader(
+                      apartmentName: widget.apartment?.name ?? 'Your Apartment',
+                    ),
+                    const SizedBox(height: 19),
+                    const _SearchBar(),
+                    const SizedBox(height: 18),
+                    _PromoBanner(onListItem: () => _openListing(false)),
+                    const SizedBox(height: 18),
+                    const DoorstepBannerAd(),
+                    const SizedBox(height: 18),
+                    _QuickActions(
+                      onBuy: _openBuy,
+                      onSell: () => _openListing(false),
+                      onRent: () => _openListing(true),
+                    ),
+                    const SizedBox(height: 25),
+                    _ApartmentListings(apartment: widget.apartment),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
+      },
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: () => _openListing(false),
         backgroundColor: primaryGreen,
         foregroundColor: Colors.white,
-        elevation: 3,
-        shape: const CircleBorder(),
-        child: const Icon(Icons.add_rounded, size: 32),
+        elevation: 5,
+        shape: const CircleBorder(
+          side: BorderSide(color: Colors.white, width: 4),
+        ),
+        child: const Icon(Icons.add_rounded, size: 29),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: BottomAppBar(
-        height: 72,
+        height: 78,
         padding: EdgeInsets.zero,
         color: Colors.white,
-        elevation: 12,
-        shadowColor: Colors.black26,
-        notchMargin: 8,
+        elevation: 18,
+        shadowColor: Colors.black38,
+        notchMargin: 7,
         shape: const CircularNotchedRectangle(),
         child: Row(
           children: [
             _NavItem(
-              icon: Icons.home_rounded,
+              icon: Icons.home_outlined,
+              selectedIcon: Icons.home_rounded,
               label: 'Home',
               selected: _tab == 0,
               onTap: () => setState(() => _tab = 0),
             ),
             _NavItem(
-              icon: Icons.grid_view_rounded,
+              icon: Icons.grid_view_outlined,
+              selectedIcon: Icons.grid_view_rounded,
               label: 'Categories',
               selected: _tab == 1,
               onTap: () => setState(() => _tab = 1),
@@ -81,12 +118,14 @@ class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
             const SizedBox(width: 62),
             _NavItem(
               icon: Icons.chat_bubble_outline_rounded,
+              selectedIcon: Icons.chat_bubble_rounded,
               label: 'Messages',
               selected: _tab == 3,
               onTap: () => setState(() => _tab = 3),
             ),
             _NavItem(
               icon: Icons.person_outline_rounded,
+              selectedIcon: Icons.person_rounded,
               label: 'Profile',
               selected: _tab == 4,
               onTap: () => setState(() => _tab = 4),
@@ -236,7 +275,9 @@ class _SearchBar extends StatelessWidget {
 }
 
 class _PromoBanner extends StatelessWidget {
-  const _PromoBanner();
+  const _PromoBanner({required this.onListItem});
+
+  final VoidCallback onListItem;
 
   @override
   Widget build(BuildContext context) {
@@ -279,7 +320,7 @@ class _PromoBanner extends StatelessWidget {
                 SizedBox(
                   height: 34,
                   child: FilledButton(
-                    onPressed: () {},
+                    onPressed: onListItem,
                     style: FilledButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: primaryGreen,
@@ -307,37 +348,50 @@ class _PromoBanner extends StatelessWidget {
 }
 
 class _QuickActions extends StatelessWidget {
-  const _QuickActions();
+  const _QuickActions({
+    required this.onBuy,
+    required this.onSell,
+    required this.onRent,
+  });
+
+  final VoidCallback onBuy;
+  final VoidCallback onSell;
+  final VoidCallback onRent;
+
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    return Row(
       children: [
         _QuickAction(
           icon: Icons.shopping_bag_outlined,
           label: 'Buy',
           color: primaryGreen,
-          background: Color(0xFFF0F8F3),
+          background: const Color(0xFFF0F8F3),
+          onTap: onBuy,
         ),
-        SizedBox(width: 9),
+        const SizedBox(width: 9),
         _QuickAction(
           icon: Icons.sell_outlined,
           label: 'Sell',
-          color: Color(0xFF459D56),
-          background: Color(0xFFF3F9F1),
+          color: const Color(0xFF459D56),
+          background: const Color(0xFFF3F9F1),
+          onTap: onSell,
         ),
-        SizedBox(width: 9),
+        const SizedBox(width: 9),
         _QuickAction(
           icon: Icons.calendar_month_outlined,
           label: 'Rent',
-          color: Color(0xFFF29B20),
-          background: Color(0xFFFFF7E9),
+          color: const Color(0xFFF29B20),
+          background: const Color(0xFFFFF7E9),
+          onTap: onRent,
         ),
-        SizedBox(width: 9),
-        _QuickAction(
+        const SizedBox(width: 9),
+        const _QuickAction(
           icon: Icons.grid_view_rounded,
           label: 'Categories',
           color: Color(0xFF6263D8),
           background: Color(0xFFF3F2FF),
+          onTap: null,
         ),
       ],
     );
@@ -350,34 +404,40 @@ class _QuickAction extends StatelessWidget {
     required this.label,
     required this.color,
     required this.background,
+    required this.onTap,
   });
   final IconData icon;
   final String label;
   final Color color;
   final Color background;
+  final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) => Expanded(
-    child: Container(
-      height: 86,
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: color, size: 29),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            maxLines: 1,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 86,
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 29),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
@@ -481,13 +541,13 @@ class _ListingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 178,
+    height: 218,
     child: ListView.separated(
       scrollDirection: Axis.horizontal,
       itemCount: listings.length,
       separatorBuilder: (_, _) => const SizedBox(width: 10),
       itemBuilder: (_, index) => SizedBox(
-        width: 112,
+        width: 150,
         child: _ProductCard(
           icon: listings[index].isRental
               ? Icons.inventory_2_outlined
@@ -496,6 +556,9 @@ class _ListingRow extends StatelessWidget {
           price: listings[index].priceLabel,
           tone: const Color(0xFF86B799),
           apartmentName: apartmentName,
+          imageUrl: listings[index].imageUrls.isEmpty
+              ? null
+              : listings[index].imageUrls.first,
         ),
       ),
     ),
@@ -525,71 +588,147 @@ class _ProductCard extends StatelessWidget {
     required this.price,
     required this.tone,
     required this.apartmentName,
+    this.imageUrl,
   });
   final IconData icon;
   final String title;
   final String price;
   final Color tone;
   final String apartmentName;
+  final String? imageUrl;
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Container(
-        height: 104,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: tone.withAlpha(95),
-          borderRadius: BorderRadius.circular(9),
+  Widget build(BuildContext context) => Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: const Color(0xFFE5E9E6)),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x0D000000),
+          blurRadius: 10,
+          offset: Offset(0, 3),
         ),
-        child: Stack(
-          children: [
-            Center(child: Icon(icon, size: 66, color: tone)),
-            const Positioned(
-              right: 7,
-              top: 7,
-              child: CircleAvatar(
-                radius: 11,
-                backgroundColor: Colors.white70,
-                child: Icon(
-                  Icons.favorite_border_rounded,
-                  size: 14,
-                  color: Colors.white,
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: imageUrl == null
+                    ? ColoredBox(
+                        color: tone.withAlpha(70),
+                        child: Center(child: Icon(icon, size: 62, color: tone)),
+                      )
+                    : ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(7),
+                        ),
+                        child: Image.network(imageUrl!, fit: BoxFit.cover),
+                      ),
+              ),
+              Positioned(
+                left: 7,
+                top: 7,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withAlpha(130),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: const Text(
+                    'Verified',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
+              const Positioned(
+                right: 7,
+                top: 7,
+                child: CircleAvatar(
+                  radius: 13,
+                  backgroundColor: Colors.white,
+                  child: Icon(
+                    Icons.favorite_border_rounded,
+                    size: 16,
+                    color: Color(0xFF303632),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-      const SizedBox(height: 8),
-      Text(
-        title,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-      ),
-      const SizedBox(height: 3),
-      Text(
-        price,
-        style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
-      ),
-      const SizedBox(height: 3),
-      Text(
-        apartmentName,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontSize: 8.5, color: Color(0xFF777D79)),
-      ),
-    ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                price,
+                style: const TextStyle(
+                  color: primaryGreen,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.location_on_outlined,
+                    size: 12,
+                    color: Color(0xFF7A817C),
+                  ),
+                  const SizedBox(width: 2),
+                  Expanded(
+                    child: Text(
+                      apartmentName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Color(0xFF777D79),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
   );
 }
 
 class _NavItem extends StatelessWidget {
   const _NavItem({
     required this.icon,
+    required this.selectedIcon,
     required this.label,
     required this.selected,
     required this.onTap,
   });
   final IconData icon;
+  final IconData selectedIcon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
@@ -597,21 +736,31 @@ class _NavItem extends StatelessWidget {
   Widget build(BuildContext context) => Expanded(
     child: InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            icon,
-            color: selected ? primaryGreen : const Color(0xFF242A26),
-            size: 24,
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+            decoration: BoxDecoration(
+              color: selected ? const Color(0xFFE5F4EA) : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              selected ? selectedIcon : icon,
+              color: selected ? primaryGreen : const Color(0xFF59605B),
+              size: 22,
+            ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 2),
           Text(
             label,
             style: TextStyle(
               color: selected ? primaryGreen : const Color(0xFF242A26),
-              fontSize: 9,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              fontSize: 9.5,
+              fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
             ),
           ),
         ],

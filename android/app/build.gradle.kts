@@ -7,6 +7,9 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val uploadKeystore = rootProject.file("upload-keystore.jks")
+val uploadPasswordFile = rootProject.file(".keystore-pass")
+
 android {
     namespace = "com.megnifylabs.doorstep_market"
     compileSdk = flutter.compileSdkVersion
@@ -18,7 +21,6 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.megnifylabs.doorstep_market"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -28,11 +30,24 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            require(uploadKeystore.exists()) {
+                "Missing android/upload-keystore.jks"
+            }
+            require(uploadPasswordFile.exists()) {
+                "Missing android/.keystore-pass"
+            }
+            storeFile = uploadKeystore
+            storePassword = uploadPasswordFile.readText().trim()
+            keyAlias = "doorstep-upload"
+            keyPassword = uploadPasswordFile.readText().trim()
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

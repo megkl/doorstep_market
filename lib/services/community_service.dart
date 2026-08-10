@@ -1,7 +1,9 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 import '../models/community_models.dart';
 
@@ -194,16 +196,180 @@ class CommunityService {
         .collection('listings')
         .snapshots()
         .map(
-          (snapshot) => snapshot.docs
-              .map(
-                (document) => MarketplaceListing.fromFirestore(
-                  document.id,
-                  document.data(),
-                ),
-              )
-              .where((listing) => listing.active)
-              .toList(),
+          (snapshot) =>
+              snapshot.docs
+                  .map(
+                    (document) => MarketplaceListing.fromFirestore(
+                      document.id,
+                      document.data(),
+                    ),
+                  )
+                  .where((listing) => listing.active)
+                  .toList()
+                ..sort((a, b) {
+                  if (a.isBoosted == b.isBoosted) return 0;
+                  return a.isBoosted ? -1 : 1;
+                }),
         );
+  }
+
+  Future<void> createListing({
+    required Apartment apartment,
+    required String title,
+    required String category,
+    required String condition,
+    required String description,
+    required double price,
+    required bool isRental,
+    required String pickupHouseNumber,
+    required List<String> imageUrls,
+    double? securityDeposit,
+    DateTime? availableFrom,
+    DateTime? availableTo,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('You must be signed in.');
+    final listing = _firestore
+        .collection('apartments')
+        .doc(apartment.id)
+        .collection('listings')
+        .doc();
+    final privateDetails = _firestore
+        .collection('apartments')
+        .doc(apartment.id)
+        .collection('listingPrivate')
+        .doc(listing.id);
+    final batch = _firestore.batch();
+    batch.set(listing, {
+      'apartmentId': apartment.id,
+      'title': title.trim(),
+      'category': category,
+      'condition': condition,
+      'description': description.trim(),
+      'price': price,
+      'listingType': isRental ? 'rent' : 'sale',
+      'securityDeposit': securityDeposit,
+      'availableFrom': availableFrom == null
+          ? null
+          : Timestamp.fromDate(availableFrom),
+      'availableTo': availableTo == null
+          ? null
+          : Timestamp.fromDate(availableTo),
+      'sellerId': user.uid,
+      'sellerName': user.displayName ?? user.email ?? 'Verified resident',
+      'imageUrls': imageUrls,
+      'active': true,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    batch.set(privateDetails, {
+      'sellerId': user.uid,
+      'pickupHouseNumber': pickupHouseNumber.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+  }
+
+  Future<List<String>> uploadListingImages({
+    required Apartment apartment,
+    required List<({String name, Uint8List bytes})> images,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('You must be signed in.');
+    final urls = <String>[];
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    for (var index = 0; index < images.length; index++) {
+      final image = images[index];
+      final extension = image.name.toLowerCase().endsWith('.png')
+          ? 'png'
+          : 'jpg';
+      final reference = FirebaseStorage.instance.ref(
+        'apartments/${apartment.id}/listings/${user.uid}/'
+        '${stamp}_$index.$extension',
+      );
+      await reference.putData(
+        image.bytes,
+        SettableMetadata(contentType: 'image/$extension'),
+      );
+      urls.add(await reference.getDownloadURL());
+    }
+    return urls;
+  }
+
+  Future<String> createReservation({
+    required Apartment apartment,
+    required MarketplaceListing listing,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('You must be signed in.');
+    if (listing.sellerId == user.uid) {
+      throw StateError('You cannot buy your own listing.');
+    }
+    final reservation = await _firestore
+        .collection('apartments')
+        .doc(apartment.id)
+        .collection('reservations')
+        .add({
+          'apartmentId': apartment.id,
+          'listingId': listing.id,
+          'listingTitle': listing.title,
+          'askingPrice': listing.price,
+          'buyerId': user.uid,
+          'buyerName': user.displayName ?? user.email,
+          'sellerId': listing.sellerId,
+          'sellerName': listing.sellerName,
+          'reservationType': listing.isRental ? 'rent' : 'sale',
+          'status': 'reserved',
+          'collected': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+    return reservation.id;
+  }
+
+  Future<void> boostListing({
+    required Apartment apartment,
+    required String listingId,
+    required String purchaseId,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('You must be signed in.');
+    await _firestore
+        .collection('apartments')
+        .doc(apartment.id)
+        .collection('listings')
+        .doc(listingId)
+        .update({
+          'boostedUntil': Timestamp.fromDate(
+            DateTime.now().toUtc().add(const Duration(days: 7)),
+          ),
+          'boostPurchaseId': purchaseId,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+  }
+
+  Future<String> getOrCreateChat({
+    required Apartment apartment,
+    required MarketplaceListing listing,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('You must be signed in.');
+    final ids = [user.uid, listing.sellerId]..sort();
+    final chatId = ids.join('_');
+    await _firestore
+        .collection('apartments')
+        .doc(apartment.id)
+        .collection('chats')
+        .doc(chatId)
+        .set({
+          'participants': ids,
+          'participantNames': {
+            user.uid: user.displayName ?? user.email ?? 'Buyer',
+            listing.sellerId: listing.sellerName,
+          },
+          'listingId': listing.id,
+          'listingTitle': listing.title,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+    return chatId;
   }
 
   Future<Apartment> createApartment({required String name}) async {

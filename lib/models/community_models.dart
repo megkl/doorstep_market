@@ -38,8 +38,17 @@ class MarketplaceListing {
     required this.id,
     required this.title,
     required this.priceLabel,
+    required this.price,
     required this.isRental,
     required this.active,
+    required this.description,
+    required this.category,
+    required this.condition,
+    required this.sellerId,
+    required this.sellerName,
+    required this.imageUrls,
+    required this.pickupHouseNumber,
+    required this.boostedUntil,
   });
 
   factory MarketplaceListing.fromFirestore(
@@ -52,14 +61,34 @@ class MarketplaceListing {
       id: id,
       title: data['title'] as String? ?? 'Untitled item',
       priceLabel: rental ? 'KSh ${price ?? 0} / day' : 'KSh ${price ?? 0}',
+      price: (price as num?)?.toDouble() ?? 0,
       isRental: rental,
       active: data['active'] as bool? ?? true,
+      description: data['description'] as String? ?? '',
+      category: data['category'] as String? ?? 'Other',
+      condition: data['condition'] as String? ?? 'Used',
+      sellerId: data['sellerId'] as String? ?? '',
+      sellerName: data['sellerName'] as String? ?? 'Verified resident',
+      imageUrls: List<String>.from(data['imageUrls'] as List? ?? const []),
+      pickupHouseNumber: data['pickupHouseNumber'] as String? ?? '',
+      boostedUntil: (data['boostedUntil'] as dynamic)?.toDate() as DateTime?,
     );
   }
 
   final String id;
   final String title;
   final String priceLabel;
+  final double price;
   final bool isRental;
   final bool active;
+  final String description;
+  final String category;
+  final String condition;
+  final String sellerId;
+  final String sellerName;
+  final List<String> imageUrls;
+  final String pickupHouseNumber;
+  final DateTime? boostedUntil;
+
+  bool get isBoosted => boostedUntil?.isAfter(DateTime.now()) ?? false;
 }

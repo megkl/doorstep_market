@@ -14,6 +14,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "589396162904-1eurq8eip9m3fk6o771b4un4pf8tlgh4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.megnifylabs.doorstep_market",
+            "certificate_hash": "575e72bc9d2637046eaf732cdf199b60e5ccb603"
+          }
+        },
+        {
+          "client_id": "589396162904-bvuuklnf91snj9m83csf9dmknoohjn88.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.megnifylabs.doorstep_market",
+            "certificate_hash": "aa520c078532f6cbf243d7566e33bd927c4bcbfb"
+          }
+        },
+        {
           "client_id": "589396162904-427csadrv49feu281q9p27rcf5vtu9cp.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -29,6 +45,13 @@
             {
               "client_id": "589396162904-427csadrv49feu281q9p27rcf5vtu9cp.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "589396162904-6mom28m03ndea4jmdo1halbgpgbq95i4.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.megnifylabs.doorstepMarkett"
+              }
             }
           ]
         }
