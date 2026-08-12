@@ -283,6 +283,7 @@ class _LandlordPortfolioScreenState
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => LandlordDashboardScreen(
+                        apartmentId: property.id,
                         apartmentName: property.name,
                         invitationCode: property.invitationCode,
                       ),
@@ -298,35 +299,26 @@ class _LandlordPortfolioScreenState
   }
 }
 
-class LandlordDashboardScreen extends StatefulWidget {
+class LandlordDashboardScreen extends ConsumerWidget {
   const LandlordDashboardScreen({
     super.key,
+    required this.apartmentId,
     required this.apartmentName,
     required this.invitationCode,
   });
 
+  final String apartmentId;
   final String apartmentName;
   final String invitationCode;
 
-  @override
-  State<LandlordDashboardScreen> createState() =>
-      _LandlordDashboardScreenState();
-}
-
-class _LandlordDashboardScreenState extends State<LandlordDashboardScreen> {
-  final _members = <(String, String)>[
-    ('Sarah Wanjiku', 'Seller / Renter'),
-    ('Brian M.', 'Buyer'),
-  ];
-
   String get _inviteLink =>
-      'https://doorstep-market-736d0.web.app/join?code=${widget.invitationCode}';
+      'https://doorstep-market-736d0.web.app/join?code=$invitationCode';
 
   String get _shareText =>
-      'Join ${widget.apartmentName} on Doorstep Market with code '
-      '${widget.invitationCode}: $_inviteLink';
+      'Join $apartmentName on Doorstep Market with code '
+      '$invitationCode: $_inviteLink';
 
-  void _soon(String feature) {
+  void _soon(BuildContext context, String feature) {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('$feature will be available soon.')));
@@ -342,16 +334,20 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen> {
     );
   }
 
-  Future<void> _copy(String value, String confirmation) async {
+  Future<void> _copy(
+    BuildContext context,
+    String value,
+    String confirmation,
+  ) async {
     await Clipboard.setData(ClipboardData(text: value));
-    if (!mounted) return;
+    if (!context.mounted) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(confirmation)));
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9F7),
       appBar: AppBar(
@@ -374,7 +370,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.apartmentName,
+                  apartmentName,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 22,
@@ -391,7 +387,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        widget.invitationCode,
+                        invitationCode,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 25,
@@ -403,7 +399,8 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen> {
                     IconButton(
                       tooltip: 'Copy code',
                       onPressed: () => _copy(
-                        widget.invitationCode,
+                        context,
+                        invitationCode,
                         'Invitation code copied.',
                       ),
                       icon: const Icon(Icons.copy_rounded, color: Colors.white),
@@ -420,7 +417,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen> {
                 child: _ManagerAction(
                   icon: Icons.qr_code_rounded,
                   label: 'Generate QR',
-                  onTap: () => _soon('QR invitations'),
+                  onTap: () => _soon(context, 'QR invitations'),
                 ),
               ),
               const SizedBox(width: 10),
@@ -428,7 +425,13 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen> {
                 child: _ManagerAction(
                   icon: Icons.person_add_alt_rounded,
                   label: 'Approvals',
-                  onTap: () => _soon('Approval requests'),
+                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Residents who use the invitation code join automatically.',
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -448,8 +451,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen> {
                 child: _ManagerAction(
                   icon: Icons.email_outlined,
                   label: 'Email',
-                  onTap: () =>
-                      _share(subject: 'Invitation to ${widget.apartmentName}'),
+                  onTap: () => _share(subject: 'Invitation to $apartmentName'),
                 ),
               ),
               const SizedBox(width: 10),
@@ -457,41 +459,129 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen> {
                 child: _ManagerAction(
                   icon: Icons.link_rounded,
                   label: 'Copy Link',
-                  onTap: () => _copy(_inviteLink, 'Invitation link copied.'),
+                  onTap: () =>
+                      _copy(context, _inviteLink, 'Invitation link copied.'),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 28),
-          Text(
-            'Members (${_members.length})',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 10),
-          for (var index = 0; index < _members.length; index++)
-            Card(
-              color: Colors.white,
-              elevation: 0,
-              child: ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: Color(0xFFE6F3EB),
-                  child: Icon(Icons.person_rounded, color: primaryGreen),
-                ),
-                title: Text(
-                  _members[index].$1,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                subtitle: Text(_members[index].$2),
-                trailing: IconButton(
-                  tooltip: 'Remove member',
-                  onPressed: () => setState(() => _members.removeAt(index)),
-                  icon: const Icon(
-                    Icons.person_remove_outlined,
-                    color: Colors.redAccent,
+          StreamBuilder<List<ApartmentMember>>(
+            stream: ref
+                .read(communityServiceProvider)
+                .watchApartmentMembers(apartmentId),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData && !snapshot.hasError) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: CircularProgressIndicator(color: primaryGreen),
                   ),
-                ),
-              ),
-            ),
+                );
+              }
+              if (snapshot.hasError) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Text('Could not load property members.'),
+                );
+              }
+              final members = snapshot.data ?? const [];
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Members (${members.length})',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (members.isEmpty)
+                    const Card(
+                      color: Colors.white,
+                      elevation: 0,
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Row(
+                          children: [
+                            Icon(Icons.group_outlined, color: primaryGreen),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'No members have joined this property yet.',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    for (final member in members)
+                      Card(
+                        color: Colors.white,
+                        elevation: 0,
+                        child: ListTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0xFFE6F3EB),
+                            child: Icon(
+                              Icons.person_rounded,
+                              color: primaryGreen,
+                            ),
+                          ),
+                          title: Text(
+                            member.displayName,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(
+                            member.email.isEmpty
+                                ? member.role
+                                : '${member.role} • ${member.email}',
+                          ),
+                          trailing: IconButton(
+                            tooltip: 'Remove member',
+                            onPressed: () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Remove member?'),
+                                  content: Text(
+                                    '${member.displayName} will lose access to this property.',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      child: const Text('Remove'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirmed == true) {
+                                await ref
+                                    .read(communityServiceProvider)
+                                    .removeApartmentMember(
+                                      apartmentId: apartmentId,
+                                      memberId: member.id,
+                                    );
+                              }
+                            },
+                            icon: const Icon(
+                              Icons.person_remove_outlined,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        ),
+                      ),
+                ],
+              );
+            },
+          ),
         ],
       ),
     );

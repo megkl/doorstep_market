@@ -4,8 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/community_models.dart';
+import '../../services/community_service.dart';
 import '../../state/auth_providers.dart';
-import '../widgets/listing_boost_button.dart';
+import '../widgets/seller_subscription_card.dart';
 import 'marketplace_action_screens.dart';
 import 'splash_screen.dart';
 
@@ -30,7 +31,6 @@ class _MyListingsScreenState extends ConsumerState<MyListingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -56,14 +56,14 @@ class _MyListingsScreenState extends ConsumerState<MyListingsScreen> {
             ),
           ),
           const SizedBox(height: 12),
+          SellerSubscriptionCard(apartment: widget.apartment),
           Expanded(
             child: StreamBuilder<List<MarketplaceListing>>(
               stream: ref
                   .read(communityServiceProvider)
-                  .watchApartmentListings(widget.apartment.id),
+                  .watchMyListings(widget.apartment.id),
               builder: (context, snapshot) {
                 final items = (snapshot.data ?? const [])
-                    .where((item) => item.sellerId == uid)
                     .where((item) => item.isRental == widget.rentals)
                     .where(
                       (item) =>
@@ -88,8 +88,9 @@ class _MyListingsScreenState extends ConsumerState<MyListingsScreen> {
                   itemCount: items.length,
                   separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (_, index) => _ListingTile(
-                    apartment: widget.apartment,
                     item: items[index],
+                    apartment: widget.apartment,
+                    service: ref.read(communityServiceProvider),
                   ),
                 );
               },
@@ -121,10 +122,15 @@ class _MyListingsScreenState extends ConsumerState<MyListingsScreen> {
 }
 
 class _ListingTile extends StatelessWidget {
-  const _ListingTile({required this.apartment, required this.item});
+  const _ListingTile({
+    required this.item,
+    required this.apartment,
+    required this.service,
+  });
 
-  final Apartment apartment;
   final MarketplaceListing item;
+  final Apartment apartment;
+  final CommunityService service;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -165,19 +171,66 @@ class _ListingTile extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                   ),
-                  if (item.isBoosted)
+                  if (item.isPromoted)
                     const Chip(
                       visualDensity: VisualDensity.compact,
-                      label: Text('Boosted'),
+                      label: Text('Advertised'),
                     ),
                 ],
               ),
               Text('${item.priceLabel} • ${item.category}'),
-              const SizedBox(height: 6),
-              if (item.active && !item.isBoosted)
-                ListingBoostButton(apartment: apartment, listing: item),
             ],
           ),
+        ),
+        PopupMenuButton<String>(
+          onSelected: (value) async {
+            if (value == 'toggle') {
+              try {
+                await service.setListingActive(
+                  apartment: apartment,
+                  listingId: item.id,
+                  active: !item.active,
+                );
+              } on StateError catch (error) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(error.message)));
+                }
+              }
+            } else if (value == 'delete') {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Delete listing?'),
+                  content: const Text('This cannot be undone.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Delete'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed == true) {
+                await service.deleteListing(
+                  apartment: apartment,
+                  listingId: item.id,
+                );
+              }
+            }
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'toggle',
+              child: Text(item.active ? 'Close listing' : 'Relist'),
+            ),
+            const PopupMenuItem(value: 'delete', child: Text('Delete')),
+          ],
         ),
       ],
     ),
@@ -265,7 +318,7 @@ class MyOrdersScreen extends StatelessWidget {
   }
 }
 
-class ReservationStatusScreen extends StatelessWidget {
+class ReservationStatusScreen extends ConsumerWidget {
   const ReservationStatusScreen({
     super.key,
     required this.apartment,
@@ -276,7 +329,7 @@ class ReservationStatusScreen extends StatelessWidget {
   final String reservationId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final reference = FirebaseFirestore.instance
         .collection('apartments')
         .doc(apartment.id)
@@ -300,7 +353,14 @@ class ReservationStatusScreen extends StatelessWidget {
               child: CircularProgressIndicator(color: primaryGreen),
             );
           }
-          final collected = data['collected'] == true;
+          final status = data['status'] as String? ?? 'pending';
+          final accepted =
+              status == 'accepted' ||
+              status == 'ready_for_pickup' ||
+              status == 'collected';
+          final ready = status == 'ready_for_pickup' || status == 'collected';
+          final collected = status == 'collected';
+          final closed = status == 'declined' || status == 'cancelled';
           return ListView(
             padding: const EdgeInsets.all(20),
             children: [
@@ -308,41 +368,145 @@ class ReservationStatusScreen extends StatelessWidget {
                 'Reservation #${reservationId.length > 8 ? reservationId.substring(0, 8) : reservationId}',
               ),
               const SizedBox(height: 18),
-              const _ReservationStep(
-                complete: true,
+              _ReservationStep(
+                complete: status != 'pending',
                 icon: Icons.bookmark_added_outlined,
-                title: 'Item Reserved',
-                subtitle: 'The seller has been notified of your interest.',
+                title: 'Reservation Requested',
+                subtitle: status == 'pending'
+                    ? 'Waiting for the seller to accept your request.'
+                    : closed
+                    ? 'This request was not completed.'
+                    : 'The seller accepted your reservation.',
               ),
-              const _ReservationStep(
-                complete: false,
+              _ReservationStep(
+                complete: accepted,
                 icon: Icons.chat_bubble_outline_rounded,
                 title: 'Arrange Pickup',
-                subtitle:
-                    'Use chat to agree on a time, place and payment method.',
+                subtitle: accepted
+                    ? 'Use chat to agree on a time, place and payment method.'
+                    : 'Available after the seller accepts.',
+              ),
+              _ReservationStep(
+                complete: ready,
+                icon: Icons.inventory_2_outlined,
+                title: 'Ready for Pickup',
+                subtitle: ready
+                    ? 'The seller says the item is ready.'
+                    : 'The seller will mark the item ready.',
               ),
               _ReservationStep(
                 complete: collected,
-                icon: Icons.inventory_2_outlined,
+                icon: Icons.check_circle_outline,
                 title: 'Inspect and Collect',
                 subtitle: collected
                     ? 'The item was marked as collected.'
                     : 'Inspect the item before paying the seller directly.',
               ),
               const SizedBox(height: 20),
-              if (!collected)
+              if (ready && !collected)
                 FilledButton(
-                  onPressed: () => reference.update({
-                    'collected': true,
-                    'status': 'collected',
-                    'collectedAt': FieldValue.serverTimestamp(),
-                  }),
+                  onPressed: () => ref
+                      .read(communityServiceProvider)
+                      .updateReservationStatus(
+                        apartment: apartment,
+                        reservationId: reservationId,
+                        status: 'collected',
+                      ),
                   child: const Text('Mark as Collected'),
                 ),
+              if (collected) ...[
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  onPressed: () => _showReviewDialog(context, ref),
+                  icon: const Icon(Icons.star_outline_rounded),
+                  label: const Text('Leave a Seller Review'),
+                ),
+              ],
+              if (status == 'pending' || status == 'accepted') ...[
+                const SizedBox(height: 10),
+                OutlinedButton(
+                  onPressed: () => ref
+                      .read(communityServiceProvider)
+                      .updateReservationStatus(
+                        apartment: apartment,
+                        reservationId: reservationId,
+                        status: 'cancelled',
+                      ),
+                  child: const Text('Cancel Reservation'),
+                ),
+              ],
             ],
           );
         },
       ),
+    );
+  }
+
+  Future<void> _showReviewDialog(BuildContext context, WidgetRef ref) async {
+    var rating = 5;
+    final comment = TextEditingController();
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Review the seller'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var index = 1; index <= 5; index++)
+                    IconButton(
+                      onPressed: () => setDialogState(() => rating = index),
+                      icon: Icon(
+                        index <= rating
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        color: Colors.amber.shade700,
+                      ),
+                    ),
+                ],
+              ),
+              TextField(
+                controller: comment,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Share how the collection went…',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Submit'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (submitted != true || !context.mounted) {
+      comment.dispose();
+      return;
+    }
+    await ref
+        .read(communityServiceProvider)
+        .submitReview(
+          apartment: apartment,
+          reservationId: reservationId,
+          rating: rating,
+          comment: comment.text,
+        );
+    comment.dispose();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Review submitted. Thank you.')),
     );
   }
 }
@@ -418,8 +582,11 @@ class HelpSupportScreen extends StatelessWidget {
 }
 
 String _statusLabel(String? status) => switch (status) {
-  'reserved' => 'Reserved',
+  'pending' => 'Awaiting seller response',
+  'accepted' => 'Accepted',
+  'ready_for_pickup' => 'Ready for pickup',
   'collected' => 'Collected',
+  'declined' => 'Declined',
   'cancelled' => 'Cancelled',
   _ => 'In progress',
 };

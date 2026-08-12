@@ -4,7 +4,7 @@
 
 - App bundle: `build/app/outputs/bundle/release/app-release.aab`
 - Application ID: `com.megnifylabs.doorstep_market`
-- Version: `1.0.1` (`versionCode` 3)
+- Version: `1.0.2` (`versionCode` 4)
 - Target SDK: Android 16 / API 36
 
 ## Before uploading
@@ -39,29 +39,27 @@ App signing key certificate**. Add its SHA-1 and SHA-256 fingerprints to the
 Android app in Firebase Project Settings, then download the refreshed
 `google-services.json` before the next bundle.
 
-## AdMob before production
+## Weekly seller advertising subscription
 
-Replace Google's sample AdMob application ID in
-`android/app/src/main/AndroidManifest.xml` with the Doorstep Market Android app
-ID. Build the release with the production banner unit:
+In Play Console, open **Monetize with Play → Products → Subscriptions** and
+create a subscription with product ID `seller_advertising_weekly`. The ID must
+match exactly.
 
-```sh
-flutter build appbundle --release \
-  --dart-define=ADMOB_ANDROID_BANNER_ID=ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY
-```
+Create an auto-renewing base plan with:
 
-Never click live ads while testing. Debug builds use Google's official test ad
-unit automatically.
+- Base plan ID: `weekly-50ksh`
+- Billing period: one week
+- Kenya price: KSh 50
 
-## Seven-day listing boost
+Create an acquisition offer for that base plan with a single one-week free-trial
+phase. Activate the subscription, base plan, and offer in every country where it
+will be sold. The app automatically selects the eligible free-trial offer and
+shows Google Play's localized recurring price.
 
-In Play Console, create and activate a **one-time in-app product** with product
-ID `listing_boost_7_day`. The ID must match exactly. Add its price and make the
-product available in the countries where Doorstep Market is distributed.
-
-The current client completes purchases and grants a seven-day Firestore boost.
-Before scaling beyond the initial test, verify purchase tokens on a trusted
-backend with the Google Play Developer API to prevent fraudulent entitlements.
+The current client acknowledges purchases and promotes all of the seller's
+active listings. Before production scale, verify subscription purchase tokens
+and expiry on a trusted backend with the Google Play Developer API so cancelled,
+expired, refunded, or fraudulent subscriptions cannot retain an entitlement.
 
 ## Future releases
 

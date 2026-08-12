@@ -25,8 +25,64 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow create, read, update: if signedIn() && request.auth.uid == userId;
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && !request.resource.data.keys().hasAny([
+          'sellerAdvertisingUntil',
+          'sellerAdvertisingPurchaseId',
+          'sellerSubscriptionState',
+          'sellerSubscriptionVerifiedAt'
+        ]);
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow update: if signedIn()
+        && (
+          (request.auth.uid == userId
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              'sellerAdvertisingUntil',
+              'sellerAdvertisingPurchaseId',
+              'sellerSubscriptionState',
+              'sellerSubscriptionVerifiedAt'
+            ]))
+          || (resource.data.apartmentId != null
+            && ownsApartment(resource.data.apartmentId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'apartmentId',
+              'apartmentName',
+              'membershipStatus',
+              'updatedAt'
+            ])
+            && request.resource.data.membershipStatus == 'removed')
+        );
       allow delete: if false;
+
+      match /savedListings/{listingId} {
+        allow read, create, update, delete: if signedIn()
+          && request.auth.uid == userId;
+      }
+
+      match /blockedUsers/{blockedUserId} {
+        allow read, create, update, delete: if signedIn()
+          && request.auth.uid == userId;
+      }
+
+      match /notifications/{notificationId} {
+        allow read, update, delete: if signedIn()
+          && request.auth.uid == userId;
+        allow create: if signedIn()
+          && request.resource.data.recipientId == userId
+          && request.resource.data.actorId == request.auth.uid;
+      }
+    }
+
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.status == 'open';
+      allow read, update, delete: if false;
+    }
+
+    match /sellerSubscriptionTokens/{tokenHash} {
+      allow read, write: if false;
     }
 
     match /apartments/{apartmentId} {
@@ -56,7 +112,9 @@ service cloud.firestore {
         allow create: if signedIn()
           && request.resource.data.sellerId == request.auth.uid
           && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.apartmentId
-            == apartmentId;
+            == apartmentId
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sellerAdvertisingUntil
+            > request.time;
         allow update, delete: if signedIn()
           && (resource.data.sellerId == request.auth.uid
             || ownsApartment(apartmentId));
@@ -78,15 +136,67 @@ service cloud.firestore {
             == apartmentId
           && request.resource.data.askingPrice
             == get(/databases/$(database)/documents/apartments/$(apartmentId)/listings/$(request.resource.data.listingId)).data.price
-          && request.resource.data.status == 'reserved';
+          && request.resource.data.sellerId
+            == get(/databases/$(database)/documents/apartments/$(apartmentId)/listings/$(request.resource.data.listingId)).data.sellerId
+          && request.resource.data.sellerId != request.auth.uid
+          && get(/databases/$(database)/documents/apartments/$(apartmentId)/listings/$(request.resource.data.listingId)).data.active
+            == true
+          && request.resource.data.status == 'pending';
         allow read: if signedIn()
           && (resource.data.buyerId == request.auth.uid
             || resource.data.sellerId == request.auth.uid
             || ownsApartment(apartmentId));
         allow update: if signedIn()
-          && (resource.data.buyerId == request.auth.uid
-            || resource.data.sellerId == request.auth.uid
-            || ownsApartment(apartmentId));
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status',
+            'collected',
+            'acceptedAt',
+            'declinedAt',
+            'declineReason',
+            'ready_for_pickupAt',
+            'collectedAt',
+            'cancelledAt',
+            'updatedAt'
+          ])
+          && (
+            ownsApartment(apartmentId)
+            || (
+              resource.data.sellerId == request.auth.uid
+              && (
+                (resource.data.status == 'pending'
+                  && request.resource.data.status in ['accepted', 'declined'])
+                || (resource.data.status == 'accepted'
+                  && request.resource.data.status == 'ready_for_pickup')
+                || (resource.data.status == 'ready_for_pickup'
+                  && request.resource.data.status == 'collected')
+              )
+            )
+            || (
+              resource.data.buyerId == request.auth.uid
+              && (
+                (resource.data.status in ['pending', 'accepted']
+                  && request.resource.data.status == 'cancelled')
+                || (resource.data.status == 'ready_for_pickup'
+                  && request.resource.data.status == 'collected')
+              )
+            )
+          );
+        allow delete: if false;
+      }
+
+      match /reviews/{reviewId} {
+        allow read: if signedIn()
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.apartmentId
+            == apartmentId;
+        allow create, update: if signedIn()
+          && request.resource.data.reviewerId == request.auth.uid
+          && request.resource.data.reservationId == reviewId
+          && get(/databases/$(database)/documents/apartments/$(apartmentId)/reservations/$(reviewId)).data.buyerId
+            == request.auth.uid
+          && get(/databases/$(database)/documents/apartments/$(apartmentId)/reservations/$(reviewId)).data.status
+            == 'collected'
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5;
         allow delete: if false;
       }
 

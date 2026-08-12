@@ -23,6 +23,37 @@ class Apartment {
   final String invitationCode;
 }
 
+class ApartmentMember {
+  const ApartmentMember({
+    required this.id,
+    required this.displayName,
+    required this.email,
+    required this.role,
+  });
+
+  factory ApartmentMember.fromFirestore(String id, Map<String, dynamic> data) {
+    final email = data['email'] as String? ?? '';
+    final savedName = (data['displayName'] as String?)?.trim() ?? '';
+    final roleName = data['role'] as String?;
+    final role = UserRole.values
+        .where((item) => item.name == roleName)
+        .firstOrNull;
+    return ApartmentMember(
+      id: id,
+      displayName: savedName.isNotEmpty
+          ? savedName
+          : (email.isNotEmpty ? email : 'Resident'),
+      email: email,
+      role: role?.label ?? 'Resident',
+    );
+  }
+
+  final String id;
+  final String displayName;
+  final String email;
+  final String role;
+}
+
 class UserAccess {
   const UserAccess({this.role, this.apartment, this.approved = false});
 
@@ -48,7 +79,10 @@ class MarketplaceListing {
     required this.sellerName,
     required this.imageUrls,
     required this.pickupHouseNumber,
-    required this.boostedUntil,
+    required this.promotedUntil,
+    this.securityDeposit,
+    this.availableFrom,
+    this.availableTo,
   });
 
   factory MarketplaceListing.fromFirestore(
@@ -71,7 +105,12 @@ class MarketplaceListing {
       sellerName: data['sellerName'] as String? ?? 'Verified resident',
       imageUrls: List<String>.from(data['imageUrls'] as List? ?? const []),
       pickupHouseNumber: data['pickupHouseNumber'] as String? ?? '',
-      boostedUntil: (data['boostedUntil'] as dynamic)?.toDate() as DateTime?,
+      promotedUntil:
+          ((data['promotedUntil'] ?? data['boostedUntil']) as dynamic)?.toDate()
+              as DateTime?,
+      securityDeposit: (data['securityDeposit'] as num?)?.toDouble(),
+      availableFrom: (data['availableFrom'] as dynamic)?.toDate() as DateTime?,
+      availableTo: (data['availableTo'] as dynamic)?.toDate() as DateTime?,
     );
   }
 
@@ -88,7 +127,12 @@ class MarketplaceListing {
   final String sellerName;
   final List<String> imageUrls;
   final String pickupHouseNumber;
-  final DateTime? boostedUntil;
+  final DateTime? promotedUntil;
+  final double? securityDeposit;
+  final DateTime? availableFrom;
+  final DateTime? availableTo;
 
-  bool get isBoosted => boostedUntil?.isAfter(DateTime.now()) ?? false;
+  bool get sellerPlanActive => promotedUntil?.isAfter(DateTime.now()) ?? false;
+
+  bool get isPromoted => promotedUntil?.isAfter(DateTime.now()) ?? false;
 }

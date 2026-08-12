@@ -33,6 +33,30 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Node/Firebase generated files
+**/node_modules/
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+functions/.runtimeconfig.json
+functions/lib/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*.local
+*service-account*.json
+serviceAccountKey.json
+
+# Android signing secrets and generated bundles
+/android/*.jks
+/android/*.keystore
+/android/.keystore-pass
+*.aab
+*.apk
+
 # Symbolication related
 app.*.symbols
 

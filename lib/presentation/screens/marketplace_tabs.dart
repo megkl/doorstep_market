@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/community_models.dart';
 import '../../state/auth_providers.dart';
 import 'marketplace_action_screens.dart';
+import 'community_feature_screens.dart';
 import 'order_profile_screens.dart';
+import 'seller_reservation_screens.dart';
 import 'splash_screen.dart';
 
 class CategoriesScreen extends ConsumerStatefulWidget {
@@ -297,7 +299,7 @@ class ChatsScreen extends StatelessWidget {
   }
 }
 
-class ChatThreadScreen extends StatefulWidget {
+class ChatThreadScreen extends ConsumerStatefulWidget {
   const ChatThreadScreen({
     super.key,
     required this.apartment,
@@ -312,11 +314,27 @@ class ChatThreadScreen extends StatefulWidget {
   final String listingTitle;
 
   @override
-  State<ChatThreadScreen> createState() => _ChatThreadScreenState();
+  ConsumerState<ChatThreadScreen> createState() => _ChatThreadScreenState();
 }
 
-class _ChatThreadScreenState extends State<ChatThreadScreen> {
+class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   final _message = TextEditingController();
+  bool _blocked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBlockedState();
+  }
+
+  Future<void> _loadBlockedState() async {
+    final otherId = await _otherUserId();
+    if (otherId == null) return;
+    final blocked = await ref
+        .read(communityServiceProvider)
+        .isUserBlocked(otherId);
+    if (mounted) setState(() => _blocked = blocked);
+  }
 
   DocumentReference<Map<String, dynamic>> get _chat => FirebaseFirestore
       .instance
@@ -345,6 +363,29 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
       'lastMessage': text,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    final chat = await _chat.get();
+    final participants = List<String>.from(
+      chat.data()?['participants'] as List? ?? const [],
+    );
+    final recipient = participants.where((id) => id != user.uid).firstOrNull;
+    if (recipient != null) {
+      await ref
+          .read(communityServiceProvider)
+          .notifyChatMessage(
+            apartment: widget.apartment,
+            chatId: widget.chatId,
+            recipientId: recipient,
+            preview: text,
+          );
+    }
+  }
+
+  Future<String?> _otherUserId() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final data = (await _chat.get()).data();
+    return List<String>.from(
+      data?['participants'] as List? ?? const [],
+    ).where((id) => id != uid).firstOrNull;
   }
 
   @override
@@ -364,6 +405,34 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
             Text(widget.listingTitle, style: const TextStyle(fontSize: 11)),
           ],
         ),
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) async {
+              final otherId = await _otherUserId();
+              if (!context.mounted || otherId == null) return;
+              if (value == 'report') {
+                await showReportDialog(
+                  context,
+                  ref,
+                  targetType: 'user',
+                  targetId: otherId,
+                  apartmentId: widget.apartment.id,
+                );
+              } else {
+                await ref.read(communityServiceProvider).blockUser(otherId);
+                if (!context.mounted) return;
+                setState(() => _blocked = true);
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('User blocked.')));
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'report', child: Text('Report user')),
+              PopupMenuItem(value: 'block', child: Text('Block user')),
+            ],
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -424,10 +493,13 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                   Expanded(
                     child: TextField(
                       controller: _message,
+                      enabled: !_blocked,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _send(),
                       decoration: InputDecoration(
-                        hintText: 'Type a message...',
+                        hintText: _blocked
+                            ? 'You blocked this user'
+                            : 'Type a message...',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -436,7 +508,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
-                    onPressed: _send,
+                    onPressed: _blocked ? null : _send,
                     icon: const Icon(Icons.send_rounded),
                   ),
                 ],
@@ -547,14 +619,33 @@ class ProfileScreen extends ConsumerWidget {
                   open((apartment) => MyOrdersScreen(apartment: apartment)),
             ),
             _ProfileTile(
+              icon: Icons.assignment_outlined,
+              label: 'Reservation Requests',
+              onTap: () => open(
+                (apartment) => SellerReservationsScreen(apartment: apartment),
+              ),
+            ),
+            _ProfileTile(
+              icon: Icons.campaign_outlined,
+              label: 'Seller Advertising',
+              onTap: () => open(
+                (apartment) => SellerAdvertisingScreen(apartment: apartment),
+              ),
+            ),
+            _ProfileTile(
               icon: Icons.favorite_border_rounded,
               label: 'Saved Items',
-              onTap: () {},
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const SavedItemsScreen(),
+                ),
+              ),
             ),
             _ProfileTile(
               icon: Icons.star_border_rounded,
               label: 'Reviews',
-              onTap: () {},
+              onTap: () =>
+                  open((apartment) => ReviewsScreen(apartment: apartment)),
             ),
             const Padding(
               padding: EdgeInsets.fromLTRB(20, 22, 20, 8),

@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/community_models.dart';
 import '../../state/auth_providers.dart';
-import '../widgets/ad_banner.dart';
 import 'marketplace_action_screens.dart';
 import 'marketplace_tabs.dart';
+import 'community_feature_screens.dart';
 import 'splash_screen.dart';
 
 class MarketplaceHomeScreen extends ConsumerStatefulWidget {
@@ -63,8 +63,6 @@ class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
                     const _SearchBar(),
                     const SizedBox(height: 18),
                     _PromoBanner(onListItem: () => _openListing(false)),
-                    const SizedBox(height: 18),
-                    const DoorstepBannerAd(),
                     const SizedBox(height: 18),
                     _QuickActions(
                       onBuy: _openBuy,
@@ -195,7 +193,11 @@ class _HomeHeader extends StatelessWidget {
           ),
         ),
         IconButton(
-          onPressed: null,
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const NotificationsScreen(),
+            ),
+          ),
           icon: Icon(
             Icons.notifications_none_rounded,
             color: Colors.black,

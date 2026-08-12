@@ -6,8 +6,13 @@ import 'package:image_picker/image_picker.dart';
 import '../../models/community_models.dart';
 import '../../state/auth_providers.dart';
 import 'marketplace_tabs.dart';
+import 'community_feature_screens.dart';
 import 'order_profile_screens.dart';
+import 'seller_reservation_screens.dart';
 import 'splash_screen.dart';
+
+String _dateLabel(DateTime date) =>
+    '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
 
 class BuyScreen extends ConsumerWidget {
   const BuyScreen({super.key, required this.apartment});
@@ -147,6 +152,35 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
   String _category = 'Furniture';
   String _condition = 'Used';
   bool _saving = false;
+  DateTimeRange? _availability;
+
+  Future<void> _pickAvailability() async {
+    final now = DateUtils.dateOnly(DateTime.now());
+    final selected = await showDateRangePicker(
+      context: context,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+      initialDateRange: _availability,
+    );
+    if (selected != null && mounted) {
+      setState(() => _availability = selected);
+    }
+  }
+
+  Future<bool> _requireSubscription() async {
+    final active = await ref
+        .read(communityServiceProvider)
+        .hasActiveSellerAdvertising();
+    if (active || !mounted) return active;
+    final subscribed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => SellerAdvertisingScreen(apartment: widget.apartment),
+      ),
+    );
+    if (!mounted) return false;
+    return subscribed == true ||
+        await ref.read(communityServiceProvider).hasActiveSellerAdvertising();
+  }
 
   @override
   void dispose() {
@@ -166,6 +200,23 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
       );
       return;
     }
+    if (widget.isRental && _availability == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose the rental availability dates.')),
+      );
+      return;
+    }
+    if (!await _requireSubscription()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Start the seller plan before publishing your listing.',
+          ),
+        ),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
       final service = ref.read(communityServiceProvider);
@@ -182,6 +233,8 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
         price: double.parse(_price.text.trim()),
         isRental: widget.isRental,
         securityDeposit: double.tryParse(_deposit.text.trim()),
+        availableFrom: _availability?.start,
+        availableTo: _availability?.end,
         pickupHouseNumber: _houseNumber.text,
         imageUrls: imageUrls,
       );
@@ -194,7 +247,13 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not publish this listing.')),
+        SnackBar(
+          content: Text(
+            error is StateError
+                ? error.message
+                : 'Could not publish this listing.',
+          ),
+        ),
       );
     }
   }
@@ -414,6 +473,24 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
                 keyboardType: TextInputType.number,
                 decoration: _decoration('e.g. 1000'),
               ),
+              const SizedBox(height: 16),
+              _FormFieldLabel('Available dates'),
+              ListTile(
+                onTap: _pickAvailability,
+                tileColor: const Color(0xFFF4F7F5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                leading: const Icon(
+                  Icons.date_range_outlined,
+                  color: primaryGreen,
+                ),
+                title: Text(
+                  _availability == null
+                      ? 'Choose start and end dates'
+                      : '${_dateLabel(_availability!.start)} – ${_dateLabel(_availability!.end)}',
+                ),
+              ),
             ],
             const SizedBox(height: 16),
             _FormFieldLabel('Description'),
@@ -498,6 +575,29 @@ class ReservationScreen extends ConsumerStatefulWidget {
 
 class _ReservationScreenState extends ConsumerState<ReservationScreen> {
   bool _placing = false;
+  bool _saved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    ref.read(communityServiceProvider).isListingSaved(widget.listing.id).then((
+      value,
+    ) {
+      if (mounted) setState(() => _saved = value);
+    });
+  }
+
+  Future<void> _toggleSaved() async {
+    final next = !_saved;
+    setState(() => _saved = next);
+    await ref
+        .read(communityServiceProvider)
+        .setListingSaved(
+          apartment: widget.apartment,
+          listing: widget.listing,
+          saved: next,
+        );
+  }
 
   Future<void> _messageSeller() async {
     try {
@@ -568,6 +668,39 @@ class _ReservationScreenState extends ConsumerState<ReservationScreen> {
         'Reserve Item',
         style: TextStyle(fontWeight: FontWeight.w900),
       ),
+      actions: [
+        IconButton(
+          tooltip: _saved ? 'Remove from saved' : 'Save item',
+          onPressed: _toggleSaved,
+          icon: Icon(
+            _saved ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+          ),
+        ),
+        PopupMenuButton<String>(
+          onSelected: (value) {
+            if (value == 'report') {
+              showReportDialog(
+                context,
+                ref,
+                targetType: 'listing',
+                targetId: widget.listing.id,
+                apartmentId: widget.apartment.id,
+              );
+            } else if (value == 'block') {
+              ref
+                  .read(communityServiceProvider)
+                  .blockUser(widget.listing.sellerId);
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Seller blocked.')));
+            }
+          },
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'report', child: Text('Report listing')),
+            PopupMenuItem(value: 'block', child: Text('Block seller')),
+          ],
+        ),
+      ],
     ),
     body: Padding(
       padding: const EdgeInsets.all(20),
@@ -633,6 +766,22 @@ class _ReservationScreenState extends ConsumerState<ReservationScreen> {
             value: widget.listing.priceLabel,
             strong: true,
           ),
+          if (widget.listing.isRental &&
+              widget.listing.availableFrom != null &&
+              widget.listing.availableTo != null) ...[
+            const SizedBox(height: 8),
+            _SummaryLine(
+              label: 'Available',
+              value:
+                  '${_dateLabel(widget.listing.availableFrom!)} – ${_dateLabel(widget.listing.availableTo!)}',
+            ),
+            if ((widget.listing.securityDeposit ?? 0) > 0)
+              _SummaryLine(
+                label: 'Security deposit',
+                value:
+                    'KSh ${widget.listing.securityDeposit!.toStringAsFixed(0)}',
+              ),
+          ],
           const SizedBox(height: 18),
           Container(
             padding: const EdgeInsets.all(14),
