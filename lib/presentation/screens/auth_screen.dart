@@ -1,4 +1,6 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../services/auth_service.dart';
 import 'account_gate_screen.dart';
@@ -44,20 +46,53 @@ class _AuthScreenState extends State<AuthScreen> {
               const AccountGateScreen(),
         ),
       );
-    } catch (_) {
+    } on GoogleSignInCancelledException catch (error, stackTrace) {
+      debugPrint('Google sign-in cancelled: $error');
+      debugPrintStack(stackTrace: stackTrace);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Google sign-in could not be completed. Please try again.',
-            ),
-          ),
-        );
+      _showGoogleSignInError(
+        'Google sign-in was cancelled. Select an account to continue.',
+      );
+    } on PlatformException catch (error, stackTrace) {
+      debugPrint(
+        'Google platform sign-in failed: ${error.code}: ${error.message}',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      _showGoogleSignInError(
+        error.code == 'network_error'
+            ? 'Could not reach Google. Check your connection and try again.'
+            : 'Google sign-in failed (${error.code}). ${error.message ?? ''}'
+                  .trim(),
+      );
+    } on FirebaseAuthException catch (error, stackTrace) {
+      debugPrint(
+        'Firebase Google authentication failed: ${error.code}: '
+        '${error.message}',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      _showGoogleSignInError(
+        error.code == 'network-request-failed'
+            ? 'Could not reach Google. Check your connection and try again.'
+            : 'Google authentication failed (${error.code}). Please try again.',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Unexpected Google sign-in failure: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      _showGoogleSignInError(
+        'Google sign-in could not be completed. Please try again.',
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _showGoogleSignInError(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _switchMode() {

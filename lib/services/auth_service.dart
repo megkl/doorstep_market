@@ -3,17 +3,23 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+class GoogleSignInCancelledException implements Exception {
+  const GoogleSignInCancelledException();
+}
+
 class AuthService {
-  bool _googleInitialized = false;
+  static final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: const <String>['email'],
+  );
 
   Future<UserCredential> signInWithGoogle() async {
-    if (!_googleInitialized) {
-      await GoogleSignIn.instance.initialize();
-      _googleInitialized = true;
+    final googleUser = await _googleSignIn.signIn();
+    if (googleUser == null) {
+      throw const GoogleSignInCancelledException();
     }
-    final googleUser = await GoogleSignIn.instance.authenticate();
-    final googleAuth = googleUser.authentication;
+    final googleAuth = await googleUser.authentication;
     final credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth.accessToken,
       idToken: googleAuth.idToken,
     );
     return FirebaseAuth.instance.signInWithCredential(credential);

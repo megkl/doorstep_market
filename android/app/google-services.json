@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "589396162904-0g7mkm7ohmhjui8iacrt5rvf1hfuh8pd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.megnifylabs.doorstep_market",
+            "certificate_hash": "ac352378630ca39817a6f4f3cefa9061d6376821"
+          }
+        },
+        {
           "client_id": "589396162904-1eurq8eip9m3fk6o771b4un4pf8tlgh4.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
