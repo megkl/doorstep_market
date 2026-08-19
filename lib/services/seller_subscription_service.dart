@@ -129,6 +129,8 @@ class SellerSubscriptionOutcome {
   final bool successful;
   final PurchaseDetails purchase;
 
+  bool get restored => purchase.status == PurchaseStatus.restored;
+
   String get verificationToken =>
       purchase.verificationData.serverVerificationData;
 }

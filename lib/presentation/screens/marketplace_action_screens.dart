@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -132,10 +133,12 @@ class ListingFormScreen extends ConsumerStatefulWidget {
     super.key,
     required this.apartment,
     required this.isRental,
+    this.listing,
   });
 
   final Apartment apartment;
   final bool isRental;
+  final MarketplaceListing? listing;
 
   @override
   ConsumerState<ListingFormScreen> createState() => _ListingFormScreenState();
@@ -149,10 +152,44 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
   final _description = TextEditingController();
   final _houseNumber = TextEditingController();
   final _images = <({String name, Uint8List bytes})>[];
+  final _existingImageUrls = <String>[];
   String _category = 'Furniture';
   String _condition = 'Used';
   bool _saving = false;
   DateTimeRange? _availability;
+
+  bool get _editing => widget.listing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final listing = widget.listing;
+    if (listing == null) return;
+    _title.text = listing.title;
+    _price.text = listing.price.toStringAsFixed(
+      listing.price.truncateToDouble() == listing.price ? 0 : 2,
+    );
+    _deposit.text = listing.securityDeposit?.toStringAsFixed(0) ?? '';
+    _description.text = listing.description;
+    _category = listing.category;
+    _condition = listing.condition;
+    _existingImageUrls.addAll(listing.imageUrls);
+    if (listing.availableFrom != null && listing.availableTo != null) {
+      _availability = DateTimeRange(
+        start: listing.availableFrom!,
+        end: listing.availableTo!,
+      );
+    }
+    ref
+        .read(communityServiceProvider)
+        .loadListingPickupHouseNumber(
+          apartment: widget.apartment,
+          listingId: listing.id,
+        )
+        .then((value) {
+          if (mounted) _houseNumber.text = value;
+        });
+  }
 
   Future<void> _pickAvailability() async {
     final now = DateUtils.dateOnly(DateTime.now());
@@ -194,7 +231,7 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
 
   Future<void> _publish() async {
     if (!_formKey.currentState!.validate() || _saving) return;
-    if (_images.isEmpty) {
+    if (_images.isEmpty && _existingImageUrls.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Add at least one item photo.')),
       );
@@ -206,7 +243,7 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
       );
       return;
     }
-    if (!await _requireSubscription()) {
+    if (!_editing && !await _requireSubscription()) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -224,25 +261,47 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
         apartment: widget.apartment,
         images: _images,
       );
-      await service.createListing(
-        apartment: widget.apartment,
-        title: _title.text,
-        category: _category,
-        condition: _condition,
-        description: _description.text,
-        price: double.parse(_price.text.trim()),
-        isRental: widget.isRental,
-        securityDeposit: double.tryParse(_deposit.text.trim()),
-        availableFrom: _availability?.start,
-        availableTo: _availability?.end,
-        pickupHouseNumber: _houseNumber.text,
-        imageUrls: imageUrls,
-      );
+      final allImageUrls = [..._existingImageUrls, ...imageUrls];
+      if (_editing) {
+        await service.updateListing(
+          apartment: widget.apartment,
+          listingId: widget.listing!.id,
+          title: _title.text,
+          category: _category,
+          condition: _condition,
+          description: _description.text,
+          price: double.parse(_price.text.trim()),
+          securityDeposit: double.tryParse(_deposit.text.trim()),
+          availableFrom: _availability?.start,
+          availableTo: _availability?.end,
+          pickupHouseNumber: _houseNumber.text,
+          imageUrls: allImageUrls,
+        );
+      } else {
+        await service.createListing(
+          apartment: widget.apartment,
+          title: _title.text,
+          category: _category,
+          condition: _condition,
+          description: _description.text,
+          price: double.parse(_price.text.trim()),
+          isRental: widget.isRental,
+          securityDeposit: double.tryParse(_deposit.text.trim()),
+          availableFrom: _availability?.start,
+          availableTo: _availability?.end,
+          pickupHouseNumber: _houseNumber.text,
+          imageUrls: allImageUrls,
+        );
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Your listing is now live.')),
+        SnackBar(
+          content: Text(
+            _editing ? 'Listing updated.' : 'Your listing is now live.',
+          ),
+        ),
       );
-      Navigator.pop(context);
+      Navigator.pop(context, _editing);
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -251,6 +310,8 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
           content: Text(
             error is StateError
                 ? error.message
+                : _editing
+                ? 'Could not update this listing.'
                 : 'Could not publish this listing.',
           ),
         ),
@@ -259,7 +320,7 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
   }
 
   Future<void> _pickImages() async {
-    final remaining = 5 - _images.length;
+    final remaining = 5 - _images.length - _existingImageUrls.length;
     if (remaining <= 0) return;
     List<XFile> selected;
     try {
@@ -297,7 +358,11 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         title: Text(
-          rental ? 'Rent an Item' : 'Sell an Item',
+          _editing
+              ? 'Edit Listing'
+              : rental
+              ? 'Rent an Item'
+              : 'Sell an Item',
           style: const TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
@@ -324,7 +389,7 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
                   ),
                 ),
                 Text(
-                  '${_images.length}/5',
+                  '${_images.length + _existingImageUrls.length}/5',
                   style: const TextStyle(
                     color: primaryGreen,
                     fontWeight: FontWeight.w800,
@@ -342,10 +407,15 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
               height: 94,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: _images.length + (_images.length < 5 ? 1 : 0),
+                itemCount:
+                    _existingImageUrls.length +
+                    _images.length +
+                    (_existingImageUrls.length + _images.length < 5 ? 1 : 0),
                 separatorBuilder: (_, _) => const SizedBox(width: 9),
                 itemBuilder: (context, index) {
-                  if (index == _images.length) {
+                  final totalImages =
+                      _existingImageUrls.length + _images.length;
+                  if (index == totalImages) {
                     return InkWell(
                       key: const Key('addListingPhotosButton'),
                       onTap: _pickImages,
@@ -365,22 +435,37 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
                       ),
                     );
                   }
+                  final existing = index < _existingImageUrls.length;
+                  final localIndex = index - _existingImageUrls.length;
                   return Stack(
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(7),
-                        child: Image.memory(
-                          _images[index].bytes,
-                          width: 94,
-                          height: 94,
-                          fit: BoxFit.cover,
-                        ),
+                        child: existing
+                            ? Image.network(
+                                _existingImageUrls[index],
+                                width: 94,
+                                height: 94,
+                                fit: BoxFit.cover,
+                              )
+                            : Image.memory(
+                                _images[localIndex].bytes,
+                                width: 94,
+                                height: 94,
+                                fit: BoxFit.cover,
+                              ),
                       ),
                       Positioned(
                         right: 3,
                         top: 3,
                         child: InkWell(
-                          onTap: () => setState(() => _images.removeAt(index)),
+                          onTap: () => setState(() {
+                            if (existing) {
+                              _existingImageUrls.removeAt(index);
+                            } else {
+                              _images.removeAt(localIndex);
+                            }
+                          }),
                           child: const CircleAvatar(
                             radius: 11,
                             backgroundColor: Colors.black54,
@@ -546,8 +631,8 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
                 style: FilledButton.styleFrom(backgroundColor: primaryGreen),
                 child: _saving
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                        'Publish Listing',
+                    : Text(
+                        _editing ? 'Save Changes' : 'Publish Listing',
                         style: TextStyle(fontWeight: FontWeight.w900),
                       ),
               ),
@@ -576,6 +661,7 @@ class ReservationScreen extends ConsumerStatefulWidget {
 class _ReservationScreenState extends ConsumerState<ReservationScreen> {
   bool _placing = false;
   bool _saved = false;
+  bool _deleting = false;
 
   @override
   void initState() {
@@ -659,168 +745,274 @@ class _ReservationScreenState extends ConsumerState<ReservationScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.white,
-    appBar: AppBar(
-      backgroundColor: Colors.white,
-      title: const Text(
-        'Reserve Item',
-        style: TextStyle(fontWeight: FontWeight.w900),
-      ),
-      actions: [
-        IconButton(
-          tooltip: _saved ? 'Remove from saved' : 'Save item',
-          onPressed: _toggleSaved,
-          icon: Icon(
-            _saved ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-          ),
+  Future<void> _deleteListing() async {
+    if (_deleting) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete listing?'),
+        content: const Text(
+          'This removes the item from Doorstep Market and cannot be undone.',
         ),
-        PopupMenuButton<String>(
-          onSelected: (value) {
-            if (value == 'report') {
-              showReportDialog(
-                context,
-                ref,
-                targetType: 'listing',
-                targetId: widget.listing.id,
-                apartmentId: widget.apartment.id,
-              );
-            } else if (value == 'block') {
-              ref
-                  .read(communityServiceProvider)
-                  .blockUser(widget.listing.sellerId);
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('Seller blocked.')));
-            }
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'report', child: Text('Report listing')),
-            PopupMenuItem(value: 'block', child: Text('Block seller')),
-          ],
-        ),
-      ],
-    ),
-    body: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Card(
-            color: Colors.white,
-            elevation: 0,
-            child: ListTile(
-              leading: widget.listing.imageUrls.isEmpty
-                  ? const Icon(Icons.inventory_2_outlined, color: primaryGreen)
-                  : ClipRRect(
-                      borderRadius: BorderRadius.circular(7),
-                      child: Image.network(
-                        widget.listing.imageUrls.first,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-              title: Text(widget.listing.title),
-              subtitle: Text('by ${widget.listing.sellerName}'),
-              trailing: Text(
-                widget.listing.priceLabel,
-                style: const TextStyle(
-                  color: primaryGreen,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
           ),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _messageSeller,
-              icon: const Icon(Icons.chat_bubble_outline_rounded),
-              label: const Text('Message Seller'),
-            ),
-          ),
-          const SizedBox(height: 18),
-          const Text('Pickup', style: TextStyle(fontWeight: FontWeight.w900)),
-          const SizedBox(height: 8),
-          ListTile(
-            tileColor: const Color(0xFFF4F7F5),
-            leading: const Icon(
-              Icons.location_on_outlined,
-              color: primaryGreen,
-            ),
-            title: Text('Pickup at ${widget.apartment.name}'),
-            subtitle: const Text(
-              'Arrange the exact pickup time and unit directly with the seller in chat.',
-            ),
-          ),
-          const SizedBox(height: 22),
-          const Text(
-            'Agreed price',
-            style: TextStyle(fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 10),
-          _SummaryLine(
-            label: widget.listing.isRental ? 'Daily price' : 'Asking price',
-            value: widget.listing.priceLabel,
-            strong: true,
-          ),
-          if (widget.listing.isRental &&
-              widget.listing.availableFrom != null &&
-              widget.listing.availableTo != null) ...[
-            const SizedBox(height: 8),
-            _SummaryLine(
-              label: 'Available',
-              value:
-                  '${_dateLabel(widget.listing.availableFrom!)} – ${_dateLabel(widget.listing.availableTo!)}',
-            ),
-            if ((widget.listing.securityDeposit ?? 0) > 0)
-              _SummaryLine(
-                label: 'Security deposit',
-                value:
-                    'KSh ${widget.listing.securityDeposit!.toStringAsFixed(0)}',
-              ),
-          ],
-          const SizedBox(height: 18),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEAF6EE),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.info_outline_rounded, color: primaryGreen),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Doorstep Market does not collect or hold payment. Agree on payment and inspect the item directly with the seller at pickup.',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Spacer(),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: FilledButton(
-              key: const Key('reserveItemButton'),
-              onPressed: _placing ? null : _reserveItem,
-              style: FilledButton.styleFrom(backgroundColor: primaryGreen),
-              child: _placing
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text(
-                      'Confirm Reservation',
-                      style: TextStyle(fontWeight: FontWeight.w900),
-                    ),
-            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
           ),
         ],
       ),
-    ),
-  );
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _deleting = true);
+    try {
+      await ref
+          .read(communityServiceProvider)
+          .deleteListing(
+            apartment: widget.apartment,
+            listingId: widget.listing.id,
+          );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Listing deleted.')));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _deleting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not delete this listing.')),
+      );
+    }
+  }
+
+  Future<void> _editListing() async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => ListingFormScreen(
+          apartment: widget.apartment,
+          isRental: widget.listing.isRental,
+          listing: widget.listing,
+        ),
+      ),
+    );
+    if (updated == true && mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isSeller =
+        FirebaseAuth.instance.currentUser?.uid == widget.listing.sellerId;
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        title: Text(
+          isSeller ? 'Your Listing' : 'Reserve Item',
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+        actions: [
+          if (!isSeller)
+            IconButton(
+              tooltip: _saved ? 'Remove from saved' : 'Save item',
+              onPressed: _toggleSaved,
+              icon: Icon(
+                _saved ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              ),
+            ),
+          if (!isSeller)
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'report') {
+                  showReportDialog(
+                    context,
+                    ref,
+                    targetType: 'listing',
+                    targetId: widget.listing.id,
+                    apartmentId: widget.apartment.id,
+                  );
+                } else if (value == 'block') {
+                  ref
+                      .read(communityServiceProvider)
+                      .blockUser(widget.listing.sellerId);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Seller blocked.')),
+                  );
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'report', child: Text('Report listing')),
+                PopupMenuItem(value: 'block', child: Text('Block seller')),
+              ],
+            ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Card(
+              color: Colors.white,
+              elevation: 0,
+              child: ListTile(
+                leading: widget.listing.imageUrls.isEmpty
+                    ? const Icon(
+                        Icons.inventory_2_outlined,
+                        color: primaryGreen,
+                      )
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(7),
+                        child: Image.network(
+                          widget.listing.imageUrls.first,
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                title: Text(widget.listing.title),
+                subtitle: Text('by ${widget.listing.sellerName}'),
+                trailing: Text(
+                  widget.listing.priceLabel,
+                  style: const TextStyle(
+                    color: primaryGreen,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+            if (!isSeller)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _messageSeller,
+                  icon: const Icon(Icons.chat_bubble_outline_rounded),
+                  label: const Text('Message Seller'),
+                ),
+              ),
+            if (!isSeller) const SizedBox(height: 18),
+            const Text('Pickup', style: TextStyle(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            ListTile(
+              tileColor: const Color(0xFFF4F7F5),
+              leading: const Icon(
+                Icons.location_on_outlined,
+                color: primaryGreen,
+              ),
+              title: Text('Pickup at ${widget.apartment.name}'),
+              subtitle: const Text(
+                'Arrange the exact pickup time and unit directly with the seller in chat.',
+              ),
+            ),
+            const SizedBox(height: 22),
+            const Text(
+              'Agreed price',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            _SummaryLine(
+              label: widget.listing.isRental ? 'Daily price' : 'Asking price',
+              value: widget.listing.priceLabel,
+              strong: true,
+            ),
+            if (widget.listing.isRental &&
+                widget.listing.availableFrom != null &&
+                widget.listing.availableTo != null) ...[
+              const SizedBox(height: 8),
+              _SummaryLine(
+                label: 'Available',
+                value:
+                    '${_dateLabel(widget.listing.availableFrom!)} – ${_dateLabel(widget.listing.availableTo!)}',
+              ),
+              if ((widget.listing.securityDeposit ?? 0) > 0)
+                _SummaryLine(
+                  label: 'Security deposit',
+                  value:
+                      'KSh ${widget.listing.securityDeposit!.toStringAsFixed(0)}',
+                ),
+            ],
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF6EE),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline_rounded, color: primaryGreen),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Doorstep Market does not collect or hold payment. Agree on payment and inspect the item directly with the seller at pickup.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Spacer(),
+            if (isSeller)
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _deleting ? null : _deleteListing,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red.shade700,
+                        minimumSize: const Size.fromHeight(52),
+                      ),
+                      icon: _deleting
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.delete_outline_rounded),
+                      label: const Text('Delete'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton.icon(
+                      onPressed: _deleting ? null : _editListing,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: primaryGreen,
+                        minimumSize: const Size.fromHeight(52),
+                      ),
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text(
+                        'Edit Listing',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: FilledButton.icon(
+                  key: const Key('reserveItemButton'),
+                  onPressed: _placing ? null : _reserveItem,
+                  style: FilledButton.styleFrom(backgroundColor: primaryGreen),
+                  icon: const Icon(Icons.bookmark_add),
+                  label: _placing
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text(
+                          'Confirm Reservation',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class OrderPlacedScreen extends StatelessWidget {

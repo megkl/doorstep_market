@@ -38,7 +38,10 @@ class _SellerSubscriptionCardState
     final active = await ref
         .read(communityServiceProvider)
         .hasActiveSellerAdvertising();
-    await SellerSubscriptionService.instance.loadProduct();
+    // An already-active seller does not need Google Play restoration every
+    // time a screen containing this card is opened. Restored purchases are
+    // emitted on the purchase stream and used to be mistaken for a new sale.
+    await SellerSubscriptionService.instance.loadProduct(restore: !active);
     if (!mounted) return;
     setState(() {
       _active = active;
@@ -78,12 +81,15 @@ class _SellerSubscriptionCardState
         _active = true;
         _busy = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Seller plan active. You can now publish listings.'),
-        ),
-      );
-      Navigator.of(context).maybePop(true);
+      // A restored purchase confirms existing access; it is not a new
+      // subscription action and must not interrupt the current screen.
+      if (!outcome.restored) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Seller plan active. You can now publish listings.'),
+          ),
+        );
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _busy = false);

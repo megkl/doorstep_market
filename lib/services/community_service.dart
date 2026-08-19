@@ -267,8 +267,12 @@ class CommunityService {
               )
               .toList()
             ..sort((a, b) {
-              if (a.isPromoted == b.isPromoted) return 0;
-              return a.isPromoted ? -1 : 1;
+              final byDate =
+                  (b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+                      .compareTo(
+                        a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+                      );
+              return byDate != 0 ? byDate : b.id.compareTo(a.id);
             });
         });
   }
@@ -282,16 +286,25 @@ class CommunityService {
         .collection('listings')
         .where('sellerId', isEqualTo: uid)
         .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
+        .map((snapshot) {
+          final listings = snapshot.docs
               .map(
                 (document) => MarketplaceListing.fromFirestore(
                   document.id,
                   document.data(),
                 ),
               )
-              .toList(),
-        );
+              .toList();
+          listings.sort((a, b) {
+            final byDate =
+                (b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+                    .compareTo(
+                      a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+                    );
+            return byDate != 0 ? byDate : b.id.compareTo(a.id);
+          });
+          return listings;
+        });
   }
 
   Future<void> setListingActive({
@@ -327,6 +340,74 @@ class CommunityService {
     final batch = _firestore.batch();
     batch.delete(listing);
     batch.delete(private);
+    await batch.commit();
+  }
+
+  Future<String> loadListingPickupHouseNumber({
+    required Apartment apartment,
+    required String listingId,
+  }) async {
+    final snapshot = await _firestore
+        .collection('apartments')
+        .doc(apartment.id)
+        .collection('listingPrivate')
+        .doc(listingId)
+        .get();
+    return snapshot.data()?['pickupHouseNumber'] as String? ?? '';
+  }
+
+  Future<void> updateListing({
+    required Apartment apartment,
+    required String listingId,
+    required String title,
+    required String category,
+    required String condition,
+    required String description,
+    required double price,
+    required String pickupHouseNumber,
+    required List<String> imageUrls,
+    double? securityDeposit,
+    DateTime? availableFrom,
+    DateTime? availableTo,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('You must be signed in.');
+    final listing = _firestore
+        .collection('apartments')
+        .doc(apartment.id)
+        .collection('listings')
+        .doc(listingId);
+    final snapshot = await listing.get();
+    if (snapshot.data()?['sellerId'] != user.uid) {
+      throw StateError('Only the seller can edit this listing.');
+    }
+    final private = _firestore
+        .collection('apartments')
+        .doc(apartment.id)
+        .collection('listingPrivate')
+        .doc(listingId);
+    final batch = _firestore.batch();
+    batch.update(listing, {
+      'title': title.trim(),
+      'category': category,
+      'condition': condition,
+      'description': description.trim(),
+      'price': price,
+      'securityDeposit': securityDeposit,
+      'availableFrom': availableFrom == null
+          ? null
+          : Timestamp.fromDate(availableFrom),
+      'availableTo': availableTo == null
+          ? null
+          : Timestamp.fromDate(availableTo),
+      'imageUrls': imageUrls,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    batch.set(private, {
+      'sellerId': user.uid,
+      'pickupHouseNumber': pickupHouseNumber.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
     await batch.commit();
   }
 

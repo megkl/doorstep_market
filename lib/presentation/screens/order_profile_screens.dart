@@ -217,10 +217,25 @@ class _ListingTile extends StatelessWidget {
                 ),
               );
               if (confirmed == true) {
-                await service.deleteListing(
-                  apartment: apartment,
-                  listingId: item.id,
-                );
+                try {
+                  await service.deleteListing(
+                    apartment: apartment,
+                    listingId: item.id,
+                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Listing deleted.')),
+                    );
+                  }
+                } catch (_) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Could not delete this listing.'),
+                      ),
+                    );
+                  }
+                }
               }
             }
           },

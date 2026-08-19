@@ -80,6 +80,7 @@ class MarketplaceListing {
     required this.imageUrls,
     required this.pickupHouseNumber,
     required this.promotedUntil,
+    this.createdAt,
     this.securityDeposit,
     this.availableFrom,
     this.availableTo,
@@ -108,6 +109,7 @@ class MarketplaceListing {
       promotedUntil:
           ((data['promotedUntil'] ?? data['boostedUntil']) as dynamic)?.toDate()
               as DateTime?,
+      createdAt: (data['createdAt'] as dynamic)?.toDate() as DateTime?,
       securityDeposit: (data['securityDeposit'] as num?)?.toDouble(),
       availableFrom: (data['availableFrom'] as dynamic)?.toDate() as DateTime?,
       availableTo: (data['availableTo'] as dynamic)?.toDate() as DateTime?,
@@ -128,6 +130,7 @@ class MarketplaceListing {
   final List<String> imageUrls;
   final String pickupHouseNumber;
   final DateTime? promotedUntil;
+  final DateTime? createdAt;
   final double? securityDeposit;
   final DateTime? availableFrom;
   final DateTime? availableTo;

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -12,16 +14,23 @@ import 'seller_reservation_screens.dart';
 import 'splash_screen.dart';
 
 class CategoriesScreen extends ConsumerStatefulWidget {
-  const CategoriesScreen({super.key, required this.apartment});
+  const CategoriesScreen({
+    super.key,
+    required this.apartment,
+    this.initialCategory = 'All',
+  });
 
   final Apartment? apartment;
+  final String initialCategory;
 
   @override
   ConsumerState<CategoriesScreen> createState() => _CategoriesScreenState();
 }
 
 class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
-  String _selected = 'All';
+  late String _selected;
+  final _searchController = TextEditingController();
+  String _query = '';
   static const _categories = [
     'All',
     'Furniture',
@@ -32,36 +41,131 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
     'Other',
   ];
 
+  static const _categoryIcons = <String, IconData>{
+    'All': Icons.apps_rounded,
+    'Furniture': Icons.chair_outlined,
+    'Electronics': Icons.devices_other_rounded,
+    'Appliances': Icons.kitchen_outlined,
+    'Gaming': Icons.sports_esports_outlined,
+    'Baby Items': Icons.child_friendly_outlined,
+    'Other': Icons.more_horiz_rounded,
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = _categories.contains(widget.initialCategory)
+        ? widget.initialCategory
+        : 'All';
+  }
+
+  @override
+  void didUpdateWidget(CategoriesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialCategory != widget.initialCategory &&
+        _categories.contains(widget.initialCategory)) {
+      _selected = widget.initialCategory;
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final apartment = widget.apartment;
     return ColoredBox(
-      color: Colors.white,
+      color: const Color(0xFFF7F9F7),
       child: SafeArea(
         bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 18, 20, 14),
-              child: Text(
-                'Categories',
-                style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+              color: Colors.white,
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Browse categories',
+                    style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Find something useful right in your apartment.',
+                    style: TextStyle(color: Colors.black54, fontSize: 13),
+                  ),
+                ],
               ),
             ),
-            SizedBox(
-              height: 43,
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _query = value.trim()),
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'Search in categories...',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Clear search',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _query = '');
+                          },
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                  filled: true,
+                  fillColor: const Color(0xFFF5F8F6),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: primaryGreen),
+                  ),
+                ),
+              ),
+            ),
+            Container(
+              height: 70,
+              color: Colors.white,
               child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
                 scrollDirection: Axis.horizontal,
                 itemCount: _categories.length,
                 separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (_, index) {
                   final category = _categories[index];
                   return ChoiceChip(
+                    avatar: Icon(
+                      _categoryIcons[category],
+                      size: 18,
+                      color: category == _selected
+                          ? Colors.white
+                          : primaryGreen,
+                    ),
                     label: Text(category),
                     selected: category == _selected,
                     selectedColor: primaryGreen,
+                    backgroundColor: const Color(0xFFF4F7F5),
+                    side: BorderSide(
+                      color: category == _selected
+                          ? primaryGreen
+                          : const Color(0xFFDCE4DF),
+                    ),
+                    showCheckmark: false,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     labelStyle: TextStyle(
                       color: category == _selected
                           ? Colors.white
@@ -69,14 +173,14 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                       fontWeight: FontWeight.w700,
                     ),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(22),
                     ),
                     onSelected: (_) => setState(() => _selected = category),
                   );
                 },
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Expanded(
               child: apartment == null
                   ? const _TabEmpty(
@@ -87,6 +191,11 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                           .read(communityServiceProvider)
                           .watchApartmentListings(apartment.id),
                       builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return const _TabEmpty(
+                            'Could not load categories right now.',
+                          );
+                        }
                         if (!snapshot.hasData && !snapshot.hasError) {
                           return const Center(
                             child: CircularProgressIndicator(
@@ -94,91 +203,86 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                             ),
                           );
                         }
-                        final listings = (snapshot.data ?? const [])
-                            .where(
-                              (item) =>
-                                  _selected == 'All' ||
-                                  item.category == _selected,
-                            )
-                            .toList();
+                        final normalizedQuery = _query.toLowerCase();
+                        final listings = (snapshot.data ?? const []).where((
+                          item,
+                        ) {
+                          final inCategory =
+                              _selected == 'All' || item.category == _selected;
+                          if (!inCategory) return false;
+                          if (normalizedQuery.isEmpty) return true;
+                          return <String>[
+                            item.title,
+                            item.category,
+                            item.description,
+                            item.condition,
+                            item.sellerName,
+                            item.price.toString(),
+                            item.priceLabel,
+                          ].any(
+                            (value) =>
+                                value.toLowerCase().contains(normalizedQuery),
+                          );
+                        }).toList();
                         if (listings.isEmpty) {
-                          return _TabEmpty('No $_selected listings here yet.');
+                          return _TabEmpty(
+                            normalizedQuery.isEmpty
+                                ? 'No $_selected listings here yet.'
+                                : 'No $_selected listings match “$_query”.',
+                          );
                         }
-                        return GridView.builder(
-                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                                childAspectRatio: .75,
-                              ),
-                          itemCount: listings.length,
-                          itemBuilder: (context, index) {
-                            final item = listings[index];
-                            return InkWell(
-                              borderRadius: BorderRadius.circular(8),
-                              onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => ReservationScreen(
-                                    apartment: apartment,
-                                    listing: item,
-                                  ),
-                                ),
-                              ),
-                              child: Container(
-                                padding: const EdgeInsets.all(9),
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: const Color(0xFFE1E5E2),
-                                  ),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(6),
-                                        child: item.imageUrls.isEmpty
-                                            ? const ColoredBox(
-                                                color: Color(0xFFE7F2EB),
-                                                child: Center(
-                                                  child: Icon(
-                                                    Icons.inventory_2_outlined,
-                                                    color: primaryGreen,
-                                                    size: 42,
-                                                  ),
-                                                ),
-                                              )
-                                            : Image.network(
-                                                item.imageUrls.first,
-                                                width: double.infinity,
-                                                fit: BoxFit.cover,
-                                              ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 9),
-                                    Text(
-                                      item.title,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _selected == 'All'
+                                          ? 'All listings'
+                                          : _selected,
                                       style: const TextStyle(
+                                        fontSize: 17,
                                         fontWeight: FontWeight.w900,
                                       ),
                                     ),
-                                    Text(
-                                      item.priceLabel,
-                                      style: const TextStyle(
-                                        color: primaryGreen,
-                                        fontWeight: FontWeight.w800,
-                                      ),
+                                  ),
+                                  Text(
+                                    '${listings.length} item${listings.length == 1 ? '' : 's'}',
+                                    style: const TextStyle(
+                                      color: Colors.black54,
+                                      fontWeight: FontWeight.w700,
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
-                            );
-                          },
+                            ),
+                            Expanded(
+                              child: GridView.builder(
+                                padding: const EdgeInsets.fromLTRB(
+                                  20,
+                                  0,
+                                  20,
+                                  100,
+                                ),
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 2,
+                                      crossAxisSpacing: 12,
+                                      mainAxisSpacing: 12,
+                                      childAspectRatio: .72,
+                                    ),
+                                itemCount: listings.length,
+                                itemBuilder: (context, index) =>
+                                    _CategoryListingCard(
+                                      item: listings[index],
+                                      apartment: apartment,
+                                    ),
+                              ),
+                            ),
+                          ],
                         );
                       },
                     ),
@@ -188,6 +292,112 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
       ),
     );
   }
+}
+
+class _CategoryListingCard extends StatelessWidget {
+  const _CategoryListingCard({required this.item, required this.apartment});
+
+  final MarketplaceListing item;
+  final Apartment apartment;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    elevation: 0,
+    borderRadius: BorderRadius.circular(14),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              ReservationScreen(apartment: apartment, listing: item),
+        ),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFE1E7E3)),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  item.imageUrls.isEmpty
+                      ? const ColoredBox(
+                          color: Color(0xFFE7F2EB),
+                          child: Center(
+                            child: Icon(
+                              Icons.inventory_2_outlined,
+                              color: primaryGreen,
+                              size: 44,
+                            ),
+                          ),
+                        )
+                      : Image.network(item.imageUrls.first, fit: BoxFit.cover),
+                  Positioned(
+                    left: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: item.isRental
+                            ? const Color(0xFF244C8A)
+                            : primaryGreen,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        item.isRental ? 'For rent' : 'For sale',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    item.condition,
+                    style: const TextStyle(color: Colors.black54, fontSize: 11),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    item.priceLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: primaryGreen,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class ChatsScreen extends StatelessWidget {
@@ -231,7 +441,13 @@ class ChatsScreen extends StatelessWidget {
                             ),
                           );
                         }
-                        final chats = snapshot.data?.docs ?? const [];
+                        final chats = [...?snapshot.data?.docs]
+                          ..sort((a, b) {
+                            final aTime = a.data()['updatedAt'] as Timestamp?;
+                            final bTime = b.data()['updatedAt'] as Timestamp?;
+                            return (bTime?.millisecondsSinceEpoch ?? 0)
+                                .compareTo(aTime?.millisecondsSinceEpoch ?? 0);
+                          });
                         if (chats.isEmpty) {
                           return const _TabEmpty(
                             'No conversations yet. Open a listing to message its seller.',
@@ -252,6 +468,11 @@ class ChatsScreen extends StatelessWidget {
                                 .firstOrNull;
                             final otherName =
                                 otherEntry?.value?.toString() ?? 'Resident';
+                            final unreadCounts = Map<String, dynamic>.from(
+                              data['unreadCounts'] as Map? ?? const {},
+                            );
+                            final unread =
+                                (unreadCounts[user.uid] as num?)?.toInt() ?? 0;
                             return ListTile(
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 6,
@@ -263,8 +484,10 @@ class ChatsScreen extends StatelessWidget {
                               ),
                               title: Text(
                                 otherName,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
+                                style: TextStyle(
+                                  fontWeight: unread > 0
+                                      ? FontWeight.w900
+                                      : FontWeight.w700,
                                 ),
                               ),
                               subtitle: Text(
@@ -273,7 +496,9 @@ class ChatsScreen extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              trailing: const Icon(Icons.chevron_right_rounded),
+                              trailing: unread > 0
+                                  ? _UnreadBadge(count: unread)
+                                  : const Icon(Icons.chevron_right_rounded),
                               onTap: () => Navigator.of(context).push(
                                 MaterialPageRoute<void>(
                                   builder: (_) => ChatThreadScreen(
@@ -325,6 +550,17 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   void initState() {
     super.initState();
     _loadBlockedState();
+    unawaited(_markRead());
+  }
+
+  Future<void> _markRead() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await _chat.update({'unreadCounts.$uid': 0});
+    } on FirebaseException {
+      // The chat may have been removed between navigation and this update.
+    }
   }
 
   Future<void> _loadBlockedState() async {
@@ -353,31 +589,36 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
     final text = _message.text.trim();
     final user = FirebaseAuth.instance.currentUser;
     if (text.isEmpty || user == null) return;
-    _message.clear();
-    await _chat.collection('messages').add({
-      'senderId': user.uid,
-      'text': text,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    await _chat.update({
-      'lastMessage': text,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
     final chat = await _chat.get();
     final participants = List<String>.from(
       chat.data()?['participants'] as List? ?? const [],
     );
     final recipient = participants.where((id) => id != user.uid).firstOrNull;
-    if (recipient != null) {
-      await ref
-          .read(communityServiceProvider)
-          .notifyChatMessage(
-            apartment: widget.apartment,
-            chatId: widget.chatId,
-            recipientId: recipient,
-            preview: text,
-          );
-    }
+    if (recipient == null) return;
+    _message.clear();
+    final message = _chat.collection('messages').doc();
+    final batch = FirebaseFirestore.instance.batch();
+    batch.set(message, {
+      'senderId': user.uid,
+      'text': text,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    batch.update(_chat, {
+      'lastMessage': text,
+      'lastMessageSenderId': user.uid,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'unreadCounts.$recipient': FieldValue.increment(1),
+      'unreadCounts.${user.uid}': 0,
+    });
+    await batch.commit();
+    await ref
+        .read(communityServiceProvider)
+        .notifyChatMessage(
+          apartment: widget.apartment,
+          chatId: widget.chatId,
+          recipientId: recipient,
+          preview: text,
+        );
   }
 
   Future<String?> _otherUserId() async {
@@ -443,6 +684,11 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
+                if (snapshot.hasData) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) unawaited(_markRead());
+                  });
+                }
                 final messages = snapshot.data?.docs ?? const [];
                 if (messages.isEmpty) {
                   return const _TabEmpty(
@@ -519,6 +765,32 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
       ),
     );
   }
+}
+
+class _UnreadBadge extends StatelessWidget {
+  const _UnreadBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    constraints: const BoxConstraints(minWidth: 22),
+    height: 22,
+    padding: const EdgeInsets.symmetric(horizontal: 6),
+    alignment: Alignment.center,
+    decoration: const BoxDecoration(
+      color: primaryGreen,
+      borderRadius: BorderRadius.all(Radius.circular(11)),
+    ),
+    child: Text(
+      count > 99 ? '99+' : '$count',
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 10,
+        fontWeight: FontWeight.w900,
+      ),
+    ),
+  );
 }
 
 class ProfileScreen extends ConsumerWidget {
