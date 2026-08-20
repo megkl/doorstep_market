@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/community_models.dart';
 import '../../state/auth_providers.dart';
+import '../widgets/marketplace_filters.dart';
 import 'marketplace_action_screens.dart';
 import 'marketplace_tabs.dart';
 import 'community_feature_screens.dart';
@@ -25,6 +26,7 @@ class MarketplaceHomeScreen extends ConsumerStatefulWidget {
 class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
   int _tab = 0;
   String _searchQuery = '';
+  MarketplaceFilters _filters = const MarketplaceFilters();
   final _searchController = TextEditingController();
 
   @override
@@ -75,7 +77,16 @@ class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
                       query: _searchQuery,
                       onChanged: (value) =>
                           setState(() => _searchQuery = value.trim()),
-                      onBrowseCategories: () => setState(() => _tab = 1),
+                      filtersActive: _filters.isActive,
+                      onFilters: () async {
+                        final filters = await showMarketplaceFilters(
+                          context,
+                          current: _filters,
+                        );
+                        if (filters != null && mounted) {
+                          setState(() => _filters = filters);
+                        }
+                      },
                     ),
                     const SizedBox(height: 18),
                     _PromoBanner(onListItem: () => _openListing(false)),
@@ -90,6 +101,7 @@ class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
                     _ApartmentListings(
                       apartment: widget.apartment,
                       query: _searchQuery,
+                      filters: _filters,
                     ),
                   ],
                 ),
@@ -354,13 +366,15 @@ class _SearchBar extends StatelessWidget {
     required this.controller,
     required this.query,
     required this.onChanged,
-    required this.onBrowseCategories,
+    required this.onFilters,
+    required this.filtersActive,
   });
 
   final TextEditingController controller;
   final String query;
   final ValueChanged<String> onChanged;
-  final VoidCallback onBrowseCategories;
+  final VoidCallback onFilters;
+  final bool filtersActive;
 
   @override
   Widget build(BuildContext context) {
@@ -404,7 +418,7 @@ class _SearchBar extends StatelessWidget {
         ),
         const SizedBox(width: 9),
         InkWell(
-          onTap: onBrowseCategories,
+          onTap: onFilters,
           borderRadius: BorderRadius.circular(9),
           child: Container(
             width: 49,
@@ -413,7 +427,21 @@ class _SearchBar extends StatelessWidget {
               color: primaryGreen,
               borderRadius: BorderRadius.circular(9),
             ),
-            child: const Icon(Icons.tune_rounded, color: Colors.white),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                const Icon(Icons.tune_rounded, color: Colors.white),
+                if (filtersActive)
+                  const Positioned(
+                    right: 7,
+                    top: 7,
+                    child: CircleAvatar(
+                      radius: 4,
+                      backgroundColor: Colors.amber,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ],
@@ -626,10 +654,15 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _ApartmentListings extends ConsumerWidget {
-  const _ApartmentListings({required this.apartment, required this.query});
+  const _ApartmentListings({
+    required this.apartment,
+    required this.query,
+    required this.filters,
+  });
 
   final Apartment? apartment;
   final String query;
+  final MarketplaceFilters filters;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -658,18 +691,11 @@ class _ApartmentListings extends ConsumerWidget {
           );
         }
         final normalizedQuery = query.toLowerCase();
-        final listings = snapshot.data!.where((item) {
-          if (normalizedQuery.isEmpty) return true;
-          return <String>[
-            item.title,
-            item.category,
-            item.description,
-            item.condition,
-            item.sellerName,
-            item.price.toString(),
-            item.priceLabel,
-          ].any((value) => value.toLowerCase().contains(normalizedQuery));
-        }).toList();
+        final listings = filterMarketplaceListings(
+          snapshot.data!,
+          filters: filters,
+          query: query,
+        );
         if (listings.isEmpty) {
           return _EmptyListings(
             message: normalizedQuery.isEmpty
@@ -892,6 +918,7 @@ class _AllListingsScreen extends ConsumerStatefulWidget {
 class _AllListingsScreenState extends ConsumerState<_AllListingsScreen> {
   final _searchController = TextEditingController();
   String _query = '';
+  MarketplaceFilters _filters = const MarketplaceFilters();
 
   @override
   void dispose() {
@@ -914,36 +941,61 @@ class _AllListingsScreenState extends ConsumerState<_AllListingsScreen> {
         Container(
           color: Colors.white,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-          child: TextField(
-            controller: _searchController,
-            onChanged: (value) => setState(() => _query = value.trim()),
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: widget.rentals
-                  ? 'Search rentals by item or price...'
-                  : 'Search items by name or price...',
-              prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: _query.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: 'Clear search',
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _query = '');
-                      },
-                      icon: const Icon(Icons.close_rounded),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (value) => setState(() => _query = value.trim()),
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: widget.rentals
+                        ? 'Search rentals by item or price...'
+                        : 'Search items by name or price...',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Clear search',
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _query = '');
+                            },
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                    filled: true,
+                    fillColor: const Color(0xFFF4F7F5),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
                     ),
-              filled: true,
-              fillColor: const Color(0xFFF4F7F5),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: primaryGreen),
+                    ),
+                  ),
+                ),
               ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: primaryGreen),
+              const SizedBox(width: 8),
+              IconButton.filled(
+                tooltip: 'Filter listings',
+                onPressed: () async {
+                  final filters = await showMarketplaceFilters(
+                    context,
+                    current: _filters,
+                    allowListingType: false,
+                  );
+                  if (filters != null && mounted) {
+                    setState(() => _filters = filters);
+                  }
+                },
+                icon: Badge(
+                  isLabelVisible: _filters.isActive,
+                  smallSize: 7,
+                  child: const Icon(Icons.tune_rounded),
+                ),
               ),
-            ),
+            ],
           ),
         ),
         Expanded(
@@ -963,19 +1015,12 @@ class _AllListingsScreenState extends ConsumerState<_AllListingsScreen> {
                 );
               }
               final normalizedQuery = _query.toLowerCase();
-              final listings = snapshot.data!.where((item) {
-                if (item.isRental != widget.rentals) return false;
-                if (normalizedQuery.isEmpty) return true;
-                return <String>[
-                  item.title,
-                  item.category,
-                  item.description,
-                  item.condition,
-                  item.sellerName,
-                  item.price.toString(),
-                  item.priceLabel,
-                ].any((value) => value.toLowerCase().contains(normalizedQuery));
-              }).toList();
+              final listings = filterMarketplaceListings(
+                snapshot.data!,
+                filters: _filters,
+                query: _query,
+                forcedRental: widget.rentals,
+              );
               if (listings.isEmpty) {
                 return _EmptyListings(
                   message: normalizedQuery.isNotEmpty

@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/community_models.dart';
 import '../../state/auth_providers.dart';
 import 'marketplace_action_screens.dart';
+import 'marketplace_tabs.dart';
+import 'order_profile_screens.dart';
 import 'splash_screen.dart';
 
 class SavedItemsScreen extends ConsumerWidget {
@@ -179,8 +181,94 @@ class ReviewsScreen extends StatelessWidget {
   }
 }
 
-class NotificationsScreen extends StatelessWidget {
+class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
+
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  Future<void> _markAllRead(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> items,
+  ) async {
+    final unread = items.where((item) => item.data()['read'] != true);
+    final batch = FirebaseFirestore.instance.batch();
+    for (final item in unread) {
+      batch.update(item.reference, {'read': true});
+    }
+    await batch.commit();
+  }
+
+  Future<Apartment?> _loadApartment(String apartmentId) async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('apartments')
+        .doc(apartmentId)
+        .get();
+    final data = snapshot.data();
+    if (data == null) return null;
+    return Apartment(
+      id: snapshot.id,
+      name: data['name'] as String? ?? 'Apartment',
+      invitationCode: data['invitationCode'] as String? ?? '',
+    );
+  }
+
+  Future<void> _openNotification(
+    QueryDocumentSnapshot<Map<String, dynamic>> item,
+  ) async {
+    final data = item.data();
+    if (data['read'] != true) await item.reference.update({'read': true});
+    if (!mounted) return;
+    final apartmentId = data['apartmentId'] as String?;
+    if (apartmentId == null) return;
+    final apartment = await _loadApartment(apartmentId);
+    if (!mounted || apartment == null) return;
+
+    final chatId = data['chatId'] as String?;
+    if (data['type'] == 'chat_message' && chatId != null) {
+      final chat = await FirebaseFirestore.instance
+          .collection('apartments')
+          .doc(apartmentId)
+          .collection('chats')
+          .doc(chatId)
+          .get();
+      if (!mounted || !chat.exists) return;
+      final chatData = chat.data() ?? const <String, dynamic>{};
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      final names = Map<String, dynamic>.from(
+        chatData['participantNames'] as Map? ?? const {},
+      );
+      final otherName = names.entries
+          .where((entry) => entry.key != uid)
+          .map((entry) => entry.value.toString())
+          .firstOrNull;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ChatThreadScreen(
+            apartment: apartment,
+            chatId: chatId,
+            otherName: otherName ?? 'Resident',
+            listingTitle: chatData['listingTitle'] as String? ?? 'Listing',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final reservationId = data['reservationId'] as String?;
+    if (reservationId != null &&
+        (data['type'] as String? ?? '').startsWith('reservation_')) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ReservationStatusScreen(
+            apartment: apartment,
+            reservationId: reservationId,
+          ),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -200,6 +288,23 @@ class NotificationsScreen extends StatelessWidget {
           'Notifications',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
+        actions: [
+          if (query != null)
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: query.snapshots(),
+              builder: (context, snapshot) {
+                final items = snapshot.data?.docs ?? const [];
+                final hasUnread = items.any(
+                  (item) => item.data()['read'] != true,
+                );
+                return TextButton(
+                  onPressed: hasUnread ? () => _markAllRead(items) : null,
+                  child: const Text('Mark all read'),
+                );
+              },
+            ),
+          const SizedBox(width: 6),
+        ],
       ),
       body: query == null
           ? const _FeatureEmpty('Sign in to see notifications.')
@@ -241,7 +346,8 @@ class NotificationsScreen extends StatelessWidget {
                         ),
                       ),
                       subtitle: Text(data['body'] as String? ?? ''),
-                      onTap: () => item.reference.update({'read': true}),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => _openNotification(item),
                     );
                   },
                 );

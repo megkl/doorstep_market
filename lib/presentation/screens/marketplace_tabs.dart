@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/community_models.dart';
 import '../../state/auth_providers.dart';
+import '../widgets/marketplace_filters.dart';
 import 'marketplace_action_screens.dart';
 import 'community_feature_screens.dart';
 import 'order_profile_screens.dart';
@@ -31,6 +32,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
   late String _selected;
   final _searchController = TextEditingController();
   String _query = '';
+  MarketplaceFilters _filters = const MarketplaceFilters();
   static const _categories = [
     'All',
     'Furniture',
@@ -106,35 +108,60 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
             Container(
               color: Colors.white,
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: TextField(
-                controller: _searchController,
-                onChanged: (value) => setState(() => _query = value.trim()),
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  hintText: 'Search in categories...',
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  suffixIcon: _query.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: 'Clear search',
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _query = '');
-                          },
-                          icon: const Icon(Icons.close_rounded),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (value) =>
+                          setState(() => _query = value.trim()),
+                      textInputAction: TextInputAction.search,
+                      decoration: InputDecoration(
+                        hintText: 'Search in categories...',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: _query.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: 'Clear search',
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _query = '');
+                                },
+                                icon: const Icon(Icons.close_rounded),
+                              ),
+                        filled: true,
+                        fillColor: const Color(0xFFF5F8F6),
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
                         ),
-                  filled: true,
-                  fillColor: const Color(0xFFF5F8F6),
-                  isDense: true,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: primaryGreen),
+                        ),
+                      ),
+                    ),
                   ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: primaryGreen),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    tooltip: 'Filter listings',
+                    onPressed: () async {
+                      final filters = await showMarketplaceFilters(
+                        context,
+                        current: _filters,
+                      );
+                      if (filters != null && mounted) {
+                        setState(() => _filters = filters);
+                      }
+                    },
+                    icon: Badge(
+                      isLabelVisible: _filters.isActive,
+                      smallSize: 7,
+                      child: const Icon(Icons.tune_rounded),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
             Container(
@@ -204,26 +231,18 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                           );
                         }
                         final normalizedQuery = _query.toLowerCase();
-                        final listings = (snapshot.data ?? const []).where((
-                          item,
-                        ) {
-                          final inCategory =
-                              _selected == 'All' || item.category == _selected;
-                          if (!inCategory) return false;
-                          if (normalizedQuery.isEmpty) return true;
-                          return <String>[
-                            item.title,
-                            item.category,
-                            item.description,
-                            item.condition,
-                            item.sellerName,
-                            item.price.toString(),
-                            item.priceLabel,
-                          ].any(
-                            (value) =>
-                                value.toLowerCase().contains(normalizedQuery),
-                          );
-                        }).toList();
+                        final filtered = filterMarketplaceListings(
+                          snapshot.data ?? const [],
+                          filters: _filters,
+                          query: _query,
+                        );
+                        final listings = filtered
+                            .where(
+                              (item) =>
+                                  _selected == 'All' ||
+                                  item.category == _selected,
+                            )
+                            .toList();
                         if (listings.isEmpty) {
                           return _TabEmpty(
                             normalizedQuery.isEmpty
@@ -434,6 +453,11 @@ class ChatsScreen extends StatelessWidget {
                           .where('participants', arrayContains: user.uid)
                           .snapshots(),
                       builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return const _TabEmpty(
+                            'Could not load conversations. Check your connection and try again.',
+                          );
+                        }
                         if (!snapshot.hasData && !snapshot.hasError) {
                           return const Center(
                             child: CircularProgressIndicator(
@@ -545,6 +569,8 @@ class ChatThreadScreen extends ConsumerStatefulWidget {
 class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   final _message = TextEditingController();
   bool _blocked = false;
+  bool _sending = false;
+  String? _lastReadMessageId;
 
   @override
   void initState() {
@@ -557,7 +583,10 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      await _chat.update({'unreadCounts.$uid': 0});
+      await _chat.update({
+        'unreadCounts.$uid': 0,
+        'lastReadAt.$uid': FieldValue.serverTimestamp(),
+      });
     } on FirebaseException {
       // The chat may have been removed between navigation and this update.
     }
@@ -588,37 +617,67 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   Future<void> _send() async {
     final text = _message.text.trim();
     final user = FirebaseAuth.instance.currentUser;
-    if (text.isEmpty || user == null) return;
-    final chat = await _chat.get();
-    final participants = List<String>.from(
-      chat.data()?['participants'] as List? ?? const [],
-    );
-    final recipient = participants.where((id) => id != user.uid).firstOrNull;
-    if (recipient == null) return;
-    _message.clear();
-    final message = _chat.collection('messages').doc();
-    final batch = FirebaseFirestore.instance.batch();
-    batch.set(message, {
-      'senderId': user.uid,
-      'text': text,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    batch.update(_chat, {
-      'lastMessage': text,
-      'lastMessageSenderId': user.uid,
-      'updatedAt': FieldValue.serverTimestamp(),
-      'unreadCounts.$recipient': FieldValue.increment(1),
-      'unreadCounts.${user.uid}': 0,
-    });
-    await batch.commit();
-    await ref
-        .read(communityServiceProvider)
-        .notifyChatMessage(
-          apartment: widget.apartment,
-          chatId: widget.chatId,
-          recipientId: recipient,
-          preview: text,
-        );
+    if (text.isEmpty || user == null || _sending) return;
+    await _sendText(text, user);
+  }
+
+  Future<void> _sendText(String text, User user) async {
+    setState(() => _sending = true);
+    if (_message.text.trim() == text) _message.clear();
+    try {
+      final chat = await _chat.get();
+      final participants = List<String>.from(
+        chat.data()?['participants'] as List? ?? const [],
+      );
+      final recipient = participants.where((id) => id != user.uid).firstOrNull;
+      if (recipient == null) throw StateError('Recipient is unavailable.');
+      final message = _chat.collection('messages').doc();
+      final batch = FirebaseFirestore.instance.batch();
+      batch.set(message, {
+        'senderId': user.uid,
+        'text': text,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      batch.update(_chat, {
+        'lastMessage': text,
+        'lastMessageSenderId': user.uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'unreadCounts.$recipient': FieldValue.increment(1),
+        'unreadCounts.${user.uid}': 0,
+      });
+      await batch.commit();
+      try {
+        await ref
+            .read(communityServiceProvider)
+            .notifyChatMessage(
+              apartment: widget.apartment,
+              chatId: widget.chatId,
+              recipientId: recipient,
+              preview: text,
+            );
+      } on FirebaseException {
+        // The message is already delivered; notification delivery is best
+        // effort and must not cause a duplicate retry.
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Message was not sent.'),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () {
+              final currentUser = FirebaseAuth.instance.currentUser;
+              if (currentUser != null) {
+                unawaited(_sendText(text, currentUser));
+              }
+            },
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   Future<String?> _otherUserId() async {
@@ -678,52 +737,130 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
       body: Column(
         children: [
           Expanded(
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _chat
-                  .collection('messages')
-                  .orderBy('createdAt', descending: true)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasData) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) unawaited(_markRead());
-                  });
-                }
-                final messages = snapshot.data?.docs ?? const [];
-                if (messages.isEmpty) {
-                  return const _TabEmpty(
-                    'Start the conversation safely in Doorstep Market.',
-                  );
-                }
-                return ListView.builder(
-                  reverse: true,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: messages.length,
-                  itemBuilder: (_, index) {
-                    final data = messages[index].data();
-                    final mine = data['senderId'] == uid;
-                    return Align(
-                      alignment: mine
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: Container(
-                        constraints: const BoxConstraints(maxWidth: 280),
-                        margin: const EdgeInsets.only(bottom: 9),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: mine ? primaryGreen : const Color(0xFFF0F1F0),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          data['text'] as String? ?? '',
-                          style: TextStyle(
-                            color: mine ? Colors.white : Colors.black,
+            child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: _chat.snapshots(),
+              builder: (context, chatSnapshot) {
+                final chatData = chatSnapshot.data?.data();
+                final participants = List<String>.from(
+                  chatData?['participants'] as List? ?? const [],
+                );
+                final otherId = participants
+                    .where((participant) => participant != uid)
+                    .firstOrNull;
+                final lastReadAt = Map<String, dynamic>.from(
+                  chatData?['lastReadAt'] as Map? ?? const {},
+                );
+                final otherReadAt = otherId == null
+                    ? null
+                    : lastReadAt[otherId] as Timestamp?;
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: _chat
+                      .collection('messages')
+                      .orderBy('createdAt', descending: true)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError || chatSnapshot.hasError) {
+                      return const _TabEmpty(
+                        'Could not load messages. Check your connection and try again.',
+                      );
+                    }
+                    if (!snapshot.hasData) {
+                      return const Center(
+                        child: CircularProgressIndicator(color: primaryGreen),
+                      );
+                    }
+                    final messages = snapshot.data!.docs;
+                    if (messages.isEmpty) {
+                      return const _TabEmpty(
+                        'Start the conversation safely in Doorstep Market.',
+                      );
+                    }
+                    final newest = messages.first;
+                    if (newest.data()['senderId'] != uid &&
+                        newest.id != _lastReadMessageId) {
+                      _lastReadMessageId = newest.id;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) unawaited(_markRead());
+                      });
+                    }
+                    return ListView.builder(
+                      reverse: true,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: messages.length,
+                      itemBuilder: (_, index) {
+                        final message = messages[index];
+                        final data = message.data();
+                        final mine = data['senderId'] == uid;
+                        final createdAt = data['createdAt'] as Timestamp?;
+                        final read =
+                            mine &&
+                            createdAt != null &&
+                            otherReadAt != null &&
+                            !otherReadAt.toDate().isBefore(createdAt.toDate());
+                        return Align(
+                          alignment: mine
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 280),
+                            margin: const EdgeInsets.only(bottom: 9),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 9,
+                            ),
+                            decoration: BoxDecoration(
+                              color: mine
+                                  ? primaryGreen
+                                  : const Color(0xFFF0F1F0),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  data['text'] as String? ?? '',
+                                  style: TextStyle(
+                                    color: mine ? Colors.white : Colors.black,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      createdAt == null
+                                          ? 'Sending…'
+                                          : TimeOfDay.fromDateTime(
+                                              createdAt.toDate(),
+                                            ).format(context),
+                                      style: TextStyle(
+                                        color: mine
+                                            ? Colors.white70
+                                            : Colors.black45,
+                                        fontSize: 9,
+                                      ),
+                                    ),
+                                    if (mine) ...[
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        message.metadata.hasPendingWrites
+                                            ? Icons.schedule_rounded
+                                            : read
+                                            ? Icons.done_all_rounded
+                                            : Icons.done_rounded,
+                                        size: 13,
+                                        color: read
+                                            ? const Color(0xFFB8E8FF)
+                                            : Colors.white70,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     );
                   },
                 );
@@ -739,7 +876,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
                   Expanded(
                     child: TextField(
                       controller: _message,
-                      enabled: !_blocked,
+                      enabled: !_blocked && !_sending,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _send(),
                       decoration: InputDecoration(
@@ -754,8 +891,16 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
-                    onPressed: _blocked ? null : _send,
-                    icon: const Icon(Icons.send_rounded),
+                    onPressed: _blocked || _sending ? null : _send,
+                    icon: _sending
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.send_rounded),
                   ),
                 ],
               ),
