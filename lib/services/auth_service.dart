@@ -11,22 +11,28 @@ class AuthService {
   static const _webClientId =
       '589396162904-427csadrv49feu281q9p27rcf5vtu9cp.apps.googleusercontent.com';
 
-  static final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: const <String>['email'],
+  static final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  static final Future<void> _googleInitialization = _googleSignIn.initialize(
     serverClientId: _webClientId,
   );
 
   Future<UserCredential> signInWithGoogle() async {
-    final googleUser = await _googleSignIn.signIn();
-    if (googleUser == null) {
-      throw const GoogleSignInCancelledException();
+    await _googleInitialization;
+    try {
+      final googleUser = await _googleSignIn.authenticate(
+        scopeHint: const <String>['email'],
+      );
+      final googleAuth = googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        idToken: googleAuth.idToken,
+      );
+      return FirebaseAuth.instance.signInWithCredential(credential);
+    } on GoogleSignInException catch (error) {
+      if (error.code == GoogleSignInExceptionCode.interrupted) {
+        throw const GoogleSignInCancelledException();
+      }
+      rethrow;
     }
-    final googleAuth = await googleUser.authentication;
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
-    return FirebaseAuth.instance.signInWithCredential(credential);
   }
 
   Future<bool> login({required String phone, required String password}) async {

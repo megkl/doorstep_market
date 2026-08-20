@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../services/auth_service.dart';
 import 'account_gate_screen.dart';
@@ -70,6 +71,24 @@ class _AuthScreenState extends State<AuthScreen> {
             ? 'Could not reach Google. Check your connection and try again.'
             : 'Google sign-in failed (${error.code}). ${error.message ?? ''}'
                   .trim(),
+      );
+    } on GoogleSignInException catch (error, stackTrace) {
+      await FirebaseCrashlytics.instance.recordError(
+        error,
+        stackTrace,
+        reason: 'Google Sign-In failure: ${error.code.name}',
+      );
+      debugPrint(
+        'Google sign-in failed: ${error.code}; '
+        'description=${error.description}; details=${error.details}',
+      );
+      if (!mounted) return;
+      _showGoogleSignInError(
+        error.code == GoogleSignInExceptionCode.clientConfigurationError
+            ? 'Google sign-in configuration is invalid. Please update the app or contact support.'
+            : error.code == GoogleSignInExceptionCode.canceled
+            ? 'Google sign-in could not be completed. Please try again.'
+            : 'Google sign-in failed (${error.code.name}). Please try again.',
       );
     } on FirebaseAuthException catch (error, stackTrace) {
       await FirebaseCrashlytics.instance.recordError(
