@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -54,6 +55,11 @@ class _AuthScreenState extends State<AuthScreen> {
         'Google sign-in was cancelled. Select an account to continue.',
       );
     } on PlatformException catch (error, stackTrace) {
+      await FirebaseCrashlytics.instance.recordError(
+        error,
+        stackTrace,
+        reason: 'Google Sign-In platform failure: ${error.code}',
+      );
       debugPrint(
         'Google platform sign-in failed: ${error.code}: ${error.message}',
       );
@@ -66,6 +72,11 @@ class _AuthScreenState extends State<AuthScreen> {
                   .trim(),
       );
     } on FirebaseAuthException catch (error, stackTrace) {
+      await FirebaseCrashlytics.instance.recordError(
+        error,
+        stackTrace,
+        reason: 'Firebase Google authentication failure: ${error.code}',
+      );
       debugPrint(
         'Firebase Google authentication failed: ${error.code}: '
         '${error.message}',

@@ -8,8 +8,12 @@ class GoogleSignInCancelledException implements Exception {
 }
 
 class AuthService {
+  static const _webClientId =
+      '589396162904-427csadrv49feu281q9p27rcf5vtu9cp.apps.googleusercontent.com';
+
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: const <String>['email'],
+    serverClientId: _webClientId,
   );
 
   Future<UserCredential> signInWithGoogle() async {
